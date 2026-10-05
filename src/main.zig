@@ -6,6 +6,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const which = @import("lookup.zig");
+const report = @import("report.zig");
 
 const Allocator = std.mem.Allocator;
 
@@ -60,25 +61,15 @@ pub fn main(init: std.process.Init.Minimal) u8 {
         return exit_free;
     }
 
-    write(io, std.Io.File.stdout(), render(arena, occupiers) catch return exit_lookup_failed) catch
+    write(io, std.Io.File.stdout(), report.table(arena, occupiers) catch return exit_lookup_failed) catch
         return exit_lookup_failed;
 
     // One note per Occupier whose identity the OS withheld, so the `-` is
     // explained rather than left as a mystery. Deduped by pid: an Occupier
     // holding both address families is one process, not two. See CONTEXT.md,
     // "Withheld identity" — withholding is never an error.
-    var noted: std.ArrayList(?u32) = .empty;
-    for (occupiers) |o| {
-        if (o.identity_note.len == 0) continue;
-        if (std.mem.indexOfScalar(?u32, noted.items, o.pid) != null) continue;
-        noted.append(arena, o.pid) catch break;
-        const pid_text = pidCell(arena, o.pid) catch break;
-        const msg = std.fmt.allocPrint(
-            arena,
-            "{s}: identity unavailable, {s}\n",
-            .{ pid_text, o.identity_note },
-        ) catch break;
-        write(io, std.Io.File.stderr(), msg) catch {};
+    for (report.identityNotes(arena, occupiers) catch return exit_lookup_failed) |n| {
+        write(io, std.Io.File.stderr(), n) catch {};
     }
     return exit_occupied;
 }
@@ -116,63 +107,6 @@ fn badUsage(io: std.Io, reason: []const u8) u8 {
     write(io, std.Io.File.stderr(), reason) catch {};
     write(io, std.Io.File.stderr(), usage_text) catch {};
     return exit_bad_usage;
-}
-
-/// `ADDRESS PID PROCESS PATH`, one row per socket, columns aligned with spaces.
-/// No escape codes, so the table is byte-identical piped and on a terminal.
-fn render(arena: Allocator, occupiers: []const which.Occupier) ![]u8 {
-    const headers = [_][]const u8{ "ADDRESS", "PID", "PROCESS", "PATH" };
-
-    var widths: [headers.len]usize = undefined;
-    for (headers, 0..) |h, i| widths[i] = h.len;
-    for (occupiers) |o| {
-        widths[0] = @max(widths[0], o.local_address.len);
-        widths[1] = @max(widths[1], (try pidCell(arena, o.pid)).len);
-        widths[2] = @max(widths[2], o.process_name.len);
-        widths[3] = @max(widths[3], pathCell(o).len);
-    }
-
-    var out: std.ArrayList(u8) = .empty;
-    errdefer out.deinit(arena);
-    try writeRow(arena, &out, headers, widths);
-    for (occupiers) |o| {
-        try writeRow(arena, &out, .{
-            o.local_address,
-            try pidCell(arena, o.pid),
-            o.process_name,
-            pathCell(o),
-        }, widths);
-    }
-    return out.items;
-}
-
-/// An unknown pid is shown as the same placeholder as an unknown path, for the
-/// same reason: the OS withheld it, which is not an error. See CONTEXT.md.
-fn pidCell(arena: Allocator, pid: ?u32) ![]const u8 {
-    const p = pid orelse return which.unresolved;
-    return std.fmt.allocPrint(arena, "{d}", .{p});
-}
-
-fn pathCell(o: which.Occupier) []const u8 {
-    return o.path orelse "-";
-}
-
-/// Two spaces between columns, no trailing padding: the last column is the
-/// Path and trailing spaces would only survive into a redirected file.
-fn writeRow(
-    arena: Allocator,
-    out: *std.ArrayList(u8),
-    fields: [4][]const u8,
-    widths: [4]usize,
-) !void {
-    for (fields, widths, 0..) |f, w, i| {
-        if (i > 0) try out.appendSlice(arena, "  ");
-        try out.appendSlice(arena, f);
-        if (i + 1 < fields.len) {
-            try out.appendNTimes(arena, ' ', w - f.len);
-        }
-    }
-    try out.append(arena, '\n');
 }
 
 fn write(io: std.Io, file: std.Io.File, bytes: []const u8) !void {
