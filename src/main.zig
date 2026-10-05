@@ -12,6 +12,7 @@ const Allocator = std.mem.Allocator;
 const exit_occupied: u8 = 0;
 const exit_free: u8 = 1;
 const exit_bad_usage: u8 = 2;
+const exit_lookup_failed: u8 = 3;
 
 const usage_text =
     \\usage: which-port <port>
@@ -23,6 +24,7 @@ const usage_text =
     \\  0  the port is Occupied
     \\  1  the port is Free
     \\  2  bad usage
+    \\  3  the socket table could not be read
     \\
 ;
 
@@ -34,57 +36,79 @@ pub fn main(init: std.process.Init.Minimal) u8 {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const port = parsePort(init, arena) catch {
-        return badUsage(io, "which-port: expected exactly one port, 1 to 65535\n\n");
+    // `--help` and `-h` are a request for the help, not a bad argument: exit 0
+    // on stdout so `which-port --help` in a pipeline is not an error.
+    const argv = init.args.toSlice(arena) catch return exit_bad_usage;
+    if (argv.len == 2 and isHelpFlag(argv[1])) {
+        write(io, std.Io.File.stdout(), usage_text) catch {};
+        return exit_occupied;
+    }
+
+    const port = parsePort(argv) catch |err| {
+        const reason = describeArgProblem(err, argv, arena) catch "which-port: bad usage\n\n";
+        return badUsage(io, reason);
     };
 
-    const occupiers = which.lookup(io, arena, port) catch |err| {
-        // A socket with an unreadable owner is not Free, so it must never be
-        // reported as Free. See CONTEXT.md.
-        const msg = if (err == error.OwnerUnreadable)
-            "which-port: a Listening socket is on this port but its owner could not be read\n"
-        else
-            "which-port: the socket table could not be read\n";
-        write(io, std.Io.File.stderr(), msg) catch {};
-        return exit_bad_usage;
+    const occupiers = which.lookup(io, arena, port) catch {
+        write(io, std.Io.File.stderr(), "which-port: the socket table could not be read\n") catch {};
+        return exit_lookup_failed;
     };
 
     if (occupiers.len == 0) {
-        const msg = std.fmt.allocPrint(arena, "port {d} is free\n", .{port}) catch return exit_bad_usage;
+        const msg = std.fmt.allocPrint(arena, "port {d} is free\n", .{port}) catch return exit_lookup_failed;
         write(io, std.Io.File.stderr(), msg) catch {};
         return exit_free;
     }
 
-    write(io, std.Io.File.stdout(), render(arena, occupiers) catch return exit_bad_usage) catch
-        return exit_bad_usage;
+    write(io, std.Io.File.stdout(), render(arena, occupiers) catch return exit_lookup_failed) catch
+        return exit_lookup_failed;
 
     // One note per Occupier whose identity the OS withheld, so the `-` is
     // explained rather than left as a mystery. Deduped by pid: an Occupier
-    // holding both address families is one process, not two. See CONTEXT.md:
-    // never an error.
-    var noted: std.ArrayList(u32) = .empty;
+    // holding both address families is one process, not two. See CONTEXT.md,
+    // "Withheld identity" — withholding is never an error.
+    var noted: std.ArrayList(?u32) = .empty;
     for (occupiers) |o| {
-        if (o.path != null) continue;
-        if (std.mem.indexOfScalar(u32, noted.items, o.pid) != null) continue;
+        if (o.identity_note.len == 0) continue;
+        if (std.mem.indexOfScalar(?u32, noted.items, o.pid) != null) continue;
         noted.append(arena, o.pid) catch break;
+        const pid_text = pidCell(arena, o.pid) catch break;
         const msg = std.fmt.allocPrint(
             arena,
-            "pid {d}: identity unavailable, {s}\n",
-            .{ o.pid, o.path_note },
+            "{s}: identity unavailable, {s}\n",
+            .{ pid_text, o.identity_note },
         ) catch break;
         write(io, std.Io.File.stderr(), msg) catch {};
     }
     return exit_occupied;
 }
 
+fn isHelpFlag(arg: []const u8) bool {
+    return std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h");
+}
+
+/// Name what was actually wrong with the arguments, so a mistake is obvious
+/// without reading the syntax.
+fn describeArgProblem(err: anyerror, argv: []const [:0]const u8, arena: Allocator) ![]const u8 {
+    return switch (err) {
+        error.NoArgument => "which-port: expected a port, got none\n\n",
+        error.TooManyArguments => std.fmt.allocPrint(arena, "which-port: expected one port, got {d}\n\n", .{argv.len - 1}),
+        error.NotANumber => std.fmt.allocPrint(arena, "which-port: \"{s}\" is not a number\n\n", .{argv[1]}),
+        error.OutOfRange => std.fmt.allocPrint(arena, "which-port: \"{s}\" is not between 1 and 65535\n\n", .{argv[1]}),
+        error.UnknownFlag => std.fmt.allocPrint(arena, "which-port: unknown option \"{s}\"\n\n", .{argv[1]}),
+        else => "which-port: expected exactly one port, 1 to 65535\n\n",
+    };
+}
+
 /// Exactly one port. No ranges, no service names, no second argument.
-fn parsePort(init: std.process.Init.Minimal, arena: Allocator) !u16 {
-    const argv = try init.args.toSlice(arena);
-    if (argv.len != 2) return error.BadUsage;
+fn parsePort(argv: []const [:0]const u8) !u16 {
+    if (argv.len < 2) return error.NoArgument;
+    if (argv.len > 2) return error.TooManyArguments;
     const raw = argv[1];
-    if (raw.len == 0 or raw[0] == '-') return error.BadUsage;
-    const port = std.fmt.parseUnsigned(u16, raw, 10) catch return error.BadUsage;
-    if (port == 0) return error.BadUsage;
+    if (raw.len > 0 and raw[0] == '-') return error.UnknownFlag;
+    if (raw.len == 0) return error.NotANumber;
+    const port = std.fmt.parseUnsigned(u16, raw, 10) catch return error.NotANumber;
+    if (port == 0) return error.OutOfRange;
     return port;
 }
 
@@ -103,7 +127,7 @@ fn render(arena: Allocator, occupiers: []const which.Occupier) ![]u8 {
     for (headers, 0..) |h, i| widths[i] = h.len;
     for (occupiers) |o| {
         widths[0] = @max(widths[0], o.local_address.len);
-        widths[1] = @max(widths[1], std.fmt.count("{d}", .{o.pid}));
+        widths[1] = @max(widths[1], (try pidCell(arena, o.pid)).len);
         widths[2] = @max(widths[2], o.process_name.len);
         widths[3] = @max(widths[3], pathCell(o).len);
     }
@@ -114,12 +138,19 @@ fn render(arena: Allocator, occupiers: []const which.Occupier) ![]u8 {
     for (occupiers) |o| {
         try writeRow(arena, &out, .{
             o.local_address,
-            try std.fmt.allocPrint(arena, "{d}", .{o.pid}),
+            try pidCell(arena, o.pid),
             o.process_name,
             pathCell(o),
         }, widths);
     }
     return out.items;
+}
+
+/// An unknown pid is shown as the same placeholder as an unknown path, for the
+/// same reason: the OS withheld it, which is not an error. See CONTEXT.md.
+fn pidCell(arena: Allocator, pid: ?u32) ![]const u8 {
+    const p = pid orelse return which.unresolved;
+    return std.fmt.allocPrint(arena, "{d}", .{p});
 }
 
 fn pathCell(o: which.Occupier) []const u8 {

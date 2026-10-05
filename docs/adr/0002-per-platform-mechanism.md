@@ -9,5 +9,7 @@ unevenness is deliberate. Shelling out everywhere was measured at 29 ms for
 is the most fragile of the three, where a locale or version change silently
 breaks the parser rather than failing loudly. A subprocess survives on exactly
 one platform, so it is used there and nowhere else. The Windows call is
-hand-declared as an `extern` because Zig's standard library does not ship it,
-and the resulting binary imports only `ntdll.dll` and `KERNEL32.dll`.
+hand-declared as an `extern` because Zig's standard library does not ship it;
+it lives in `iphlpapi.dll`, not `kernel32.dll`, so the shipped binary imports
+`ntdll.dll`, `KERNEL32.dll` and `iphlpapi.dll`. The test binary additionally
+imports `ws2_32.dll` to bind its own listener.

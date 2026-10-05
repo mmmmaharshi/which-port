@@ -93,7 +93,7 @@ test "a bound Listening socket is Occupied by this process" {
 
     var found = false;
     for (rows) |row| {
-        if (row.pid != me) continue;
+        if (row.pid == null or row.pid.? != me) continue;
         // We bound loopback, so the address must be loopback and this exact port.
         try std.testing.expect(std.mem.startsWith(u8, row.local_address, "127.0.0.1"));
         try std.testing.expect(std.mem.endsWith(u8, row.local_address, port_suffix));

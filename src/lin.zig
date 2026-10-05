@@ -1,20 +1,19 @@
 //! Linux lookup: read the kernel's own tables and resolve ownership by socket
 //! identity.
 //!
-//! `/proc/net/tcp` names no owner — only a socket inode. The kernel hands us the
-//! other half of the identity in `/proc/<pid>/fd`, where the same inode appears
-//! as a `socket:[N]` link. Joining the two is how we get from a Listening socket
-//! to the Occupier holding it, with no subprocess and no root.
+//! `/proc/net/tcp` names no process — only a socket inode. The kernel hands us
+//! the other half of the identity in `/proc/<pid>/fd`, where the same inode
+//! appears as a `socket:[N]` link. Joining the two is how we get from a Listening
+//! socket to the Occupier holding it, with no subprocess and no root.
 
 const std = @import("std");
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
 
+const which = @import("lookup.zig");
 const parse = @import("parse_proc.zig");
 const addr = @import("addr.zig");
-const Occupier = @import("lookup.zig").Occupier;
-
-const unresolved = "-";
+const Occupier = which.Occupier;
 
 /// Read a procfs file into memory.
 ///
@@ -27,23 +26,26 @@ fn readProcFile(io: Io, root: Io.Dir, sub_path: []const u8, gpa: Allocator) Look
     var file = try root.openFile(io, sub_path, .{});
     defer file.close(io);
 
-    var buf: [1 << 20]u8 = undefined;
-    var used: usize = 0;
-    while (used < buf.len) {
-        const n = try std.posix.read(file.handle, buf[used..]);
+    // Grown on demand rather than reserved up front: these tables are a few KB,
+    // and a fixed 1 MiB buffer on the stack is a poor trade in a container.
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    var chunk: [4096]u8 = undefined;
+    while (true) {
+        const n = try std.posix.read(file.handle, &chunk);
         if (n == 0) break;
-        used += n;
+        try out.appendSlice(gpa, chunk[0..n]);
     }
-    return gpa.dupe(u8, buf[0..used]);
+    return out.toOwnedSlice(gpa);
 }
 
 pub const LookupError = parse.ParseError ||
     Io.Dir.OpenError ||
     Io.Dir.AccessError ||
-    Io.Dir.ReadFileAllocError ||
+    std.Io.File.OpenError ||
+    std.Io.File.Reader.Error ||
     Io.Dir.ReadLinkError ||
-    Allocator.Error ||
-    error{OwnerUnreadable};
+    Allocator.Error;
 
 /// Every Occupier holding a Listening socket on `port`.
 pub fn lookup(io: Io, gpa: Allocator, port: u16) LookupError![]Occupier {
@@ -70,7 +72,7 @@ pub fn lookup(io: Io, gpa: Allocator, port: u16) LookupError![]Occupier {
 
     var pids: std.AutoHashMap(u64, u32) = .init(gpa);
     defer pids.deinit();
-    try findOwners(io, &root, matches.items, &pids);
+    try attribute(io, &root, matches.items, &pids);
 
     var out: std.ArrayList(Occupier) = .empty;
     errdefer out.deinit(gpa);
@@ -80,28 +82,27 @@ pub fn lookup(io: Io, gpa: Allocator, port: u16) LookupError![]Occupier {
             addr.addr6(&buf, s.raw6, s.port) catch unreachable
         else
             addr.addr4(&buf, s.raw4, s.port) catch unreachable;
-        const pid = pids.get(s.inode) orelse 0;
-        if (pid == 0) {
-            // The socket has no readable owner. Saying Free here would be a
-            // lie, so say the lookup could not be completed instead.
-            return error.OwnerUnreadable;
+        // A socket with no readable owner is still an Occupied socket, and an
+        // unprivileged caller cannot read most processes' fd directories — so
+        // this is the common case, not a corner. Report the socket and say the
+        // process is unknown. Calling it Free would be a lie. See CONTEXT.md.
+        const pid = pids.get(s.inode);
+        if (pid == null) {
+            try out.append(gpa, try which.withheld(gpa, local, null, "the holding process could not be identified (access denied, or it has exited)"));
+            continue;
         }
-        try out.append(gpa, try describe(io, gpa, &root, local, pid));
+        try out.append(gpa, try describe(io, gpa, &root, local, pid.?));
     }
 
-    std.sort.heap(Occupier, out.items, {}, struct {
-        fn lessThan(_: void, a: Occupier, b: Occupier) bool {
-            if (a.pid != b.pid) return a.pid < b.pid;
-            return std.mem.order(u8, a.local_address, b.local_address) == .lt;
-        }
-    }.lessThan);
+    std.sort.heap(Occupier, out.items, {}, which.lessThan);
     return out.toOwnedSlice(gpa);
 }
 
-/// Walk `/proc/<pid>/fd` until every wanted inode has an owner. Stopping early
-/// matters: an unprivileged caller cannot read most processes' fd directories,
-/// and a box running as root would otherwise pay for thousands of link reads.
-fn findOwners(
+/// Walk `/proc/<pid>/fd` until every wanted inode has been attributed to a
+/// process. Stopping early matters: an unprivileged caller cannot read most
+/// processes' fd directories, and a box running as root would otherwise pay for
+/// thousands of link reads.
+fn attribute(
     io: Io,
     root: *Io.Dir,
     wanted: []const parse.Socket,
@@ -112,8 +113,8 @@ fn findOwners(
 
     var entries = root.iterate();
     // A process can exit while we walk, which surfaces as an iteration error.
-    // Skipping is safe: the OwnerUnreadable guard below still refuses to call a
-    // socket with no readable owner Free.
+    // Skipping is safe: the caller reports any socket still unattributed rather
+    // than calling it Free.
     while (entries.next(io) catch null) |entry| {
         if (outstanding == 0) return;
         const pid = std.fmt.parseUnsigned(u32, entry.name, 10) catch continue;
@@ -147,11 +148,12 @@ fn findOwners(
 /// the pid is already known. See CONTEXT.md.
 fn describe(io: Io, gpa: Allocator, root: *Io.Dir, local_address: []const u8, pid: u32) LookupError!Occupier {
     var path_buf: [64]u8 = undefined;
-    const exe_path = std.fmt.bufPrint(&path_buf, "{d}/exe", .{pid}) catch return withheld(gpa, local_address, pid, "the occupier exited before it could be described");
+    const exe_path = std.fmt.bufPrint(&path_buf, "{d}/exe", .{pid}) catch
+        return which.withheld(gpa, local_address, pid, "the Occupier exited before it could be described");
 
     var link_buf: [4096]u8 = undefined;
     const n = root.readLink(io, exe_path, &link_buf) catch
-        return withheld(gpa, local_address, pid, "could not read the image path (access denied, or it has exited)");
+        return which.withheld(gpa, local_address, pid, "could not read the image path (access denied, or it has exited)");
 
     const path = link_buf[0..n];
     return .{
@@ -159,16 +161,6 @@ fn describe(io: Io, gpa: Allocator, root: *Io.Dir, local_address: []const u8, pi
         .local_address = try gpa.dupe(u8, local_address),
         .process_name = try gpa.dupe(u8, std.fs.path.basename(path)),
         .path = try gpa.dupe(u8, path),
-        .path_note = "",
-    };
-}
-
-fn withheld(gpa: Allocator, local_address: []const u8, pid: u32, note: []const u8) Allocator.Error!Occupier {
-    return .{
-        .pid = pid,
-        .local_address = try gpa.dupe(u8, local_address),
-        .process_name = unresolved,
-        .path = null,
-        .path_note = note,
+        .identity_note = "",
     };
 }

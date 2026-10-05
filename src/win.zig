@@ -73,14 +73,8 @@ pub fn lookup(io: std.Io, gpa: Allocator, port: u16) LookupError![]Occupier {
     try collect4(gpa, &out, port);
     try collect6(gpa, &out, port);
 
-    std.sort.heap(Occupier, out.items, {}, lessThan);
+    std.sort.heap(Occupier, out.items, {}, which.lessThan);
     return try out.toOwnedSlice(gpa);
-}
-
-/// Sorting by pid, then address, makes the table identical across runs.
-fn lessThan(_: void, a: Occupier, b: Occupier) bool {
-    if (a.pid != b.pid) return a.pid < b.pid;
-    return std.mem.order(u8, a.local_address, b.local_address) == .lt;
 }
 
 // --- table fetch -------------------------------------------------------------
@@ -113,11 +107,15 @@ fn portOf(raw: u32) u16 {
     return @byteSwap(@as(u16, @truncate(raw)));
 }
 
-// --- address formatting ------------------------------------------------------
+// --- the seam's shared vocabulary ---------------------------------------------
 
 // Local addresses are formatted by the shared module so Windows, Linux and
 // macOS print byte-identical output. See CONTEXT.md: Local address.
 const addr = @import("addr.zig");
+
+// `withheld` and `lessThan` live beside Occupier so withholding metadata and
+// row order are one contract, not one copy per platform.
+const which = @import("lookup.zig");
 
 
 // --- collectors --------------------------------------------------------------
@@ -148,38 +146,24 @@ try out.append(gpa, try describe(gpa, local, row.dwOwningPid));
 
 // --- Occupier identity -------------------------------------------------------
 
-const unresolved = "-";
-
-/// Every row we could not fully identify. Never an error: the Occupier is known
-/// by pid and socket regardless. See CONTEXT.md.
-fn withheld(gpa: Allocator, local_address: []const u8, pid: u32, note: []const u8) Allocator.Error!Occupier {
-    return .{
-        .pid = pid,
-        .local_address = try gpa.dupe(u8, local_address),
-        .process_name = unresolved,
-        .path = null,
-        .path_note = note,
-    };
-}
-
 /// Resolve one Occupier's identity. Every failure here is reported *in* the row
-/// rather than as an error: the port is occupied either way, and the pid is
-/// already known. See CONTEXT.md.
+/// rather than as an error: the socket is occupied either way, and the pid is
+/// already known. See CONTEXT.md, "Withheld identity".
 fn describe(gpa: Allocator, local_address: []const u8, pid: u32) Allocator.Error!Occupier {
     const handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
     if (handle == null) {
-        return withheld(gpa, local_address, pid, "could not open the process (access denied, or it has exited)");
+        return which.withheld(gpa, local_address, pid, "could not open the process (access denied, or it has exited)");
     }
     defer _ = CloseHandle(handle);
 
     var wide: [4096]u16 = undefined;
     var len: u32 = @intCast(wide.len);
     if (QueryFullProcessImageNameW(handle, 0, &wide, &len) == 0) {
-        return withheld(gpa, local_address, pid, "could not read the image path (access denied, or it has exited)");
+        return which.withheld(gpa, local_address, pid, "could not read the image path (access denied, or it has exited)");
     }
 
     const path = std.unicode.utf16LeToUtf8Alloc(gpa, wide[0..len]) catch
-        return withheld(gpa, local_address, pid, "the image path is not valid text");
+        return which.withheld(gpa, local_address, pid, "the image path is not valid text");
     // Exe name is the basename, including the extension.
     const name = std.fs.path.basename(path);
     return .{
@@ -187,7 +171,7 @@ fn describe(gpa: Allocator, local_address: []const u8, pid: u32) Allocator.Error
         .local_address = try gpa.dupe(u8, local_address),
         .process_name = try gpa.dupe(u8, name),
         .path = path,
-        .path_note = "",
+        .identity_note = "",
     };
 }
 

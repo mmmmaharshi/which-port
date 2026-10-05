@@ -6,7 +6,8 @@ const std = @import("std");
 const format = std.fmt.bufPrint;
 
 /// A 4-byte address as `/proc` and the Windows table each hand it over: a 32-bit
-/// word whose bytes are already in memory order.
+/// word in network byte order, so the first octet is the *last* byte here and the
+/// `@byteSwap` below puts them back in reading order.
 pub fn addr4(buf: []u8, raw: u32, port: u16) ![]u8 {
     const addr = @byteSwap(raw);
     return format(buf, "{d}.{d}.{d}.{d}:{d}", .{
