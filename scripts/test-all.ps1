@@ -42,6 +42,7 @@ Invoke-Step 'format + parser tests (windows)' {
     zig test src/addr.zig
     zig test src/parse_proc.zig
     zig test src/report.zig
+    zig test src/lookup.zig
 }
 
 # main.zig is reached by no test file, so nothing above compiles it. Without

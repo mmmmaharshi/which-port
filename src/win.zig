@@ -72,9 +72,7 @@ pub fn lookup(io: std.Io, gpa: Allocator, port: u16) LookupError![]Occupier {
 
     try collect4(gpa, &out, port);
     try collect6(gpa, &out, port);
-
-    std.sort.heap(Occupier, out.items, {}, which.lessThan);
-    return try out.toOwnedSlice(gpa);
+    return out.toOwnedSlice(gpa);
 }
 
 // --- table fetch -------------------------------------------------------------
@@ -163,15 +161,8 @@ fn describe(gpa: Allocator, local_address: []const u8, pid: u32) Allocator.Error
 
     const path = std.unicode.utf16LeToUtf8Alloc(gpa, wide[0..len]) catch
         return which.withheld(gpa, local_address, pid, "the image path is not valid text");
-    // Exe name is the basename, including the extension.
-    const name = std.fs.path.basename(path);
-    return .{
-        .pid = pid,
-        .local_address = try gpa.dupe(u8, local_address),
-        .process_name = try gpa.dupe(u8, name),
-        .path = path,
-        .identity_note = "",
-    };
+    defer gpa.free(path);
+    return which.named(gpa, local_address, pid, path);
 }
 
 comptime {

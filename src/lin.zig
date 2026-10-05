@@ -94,7 +94,6 @@ pub fn lookup(io: Io, gpa: Allocator, port: u16) LookupError![]Occupier {
         try out.append(gpa, try describe(io, gpa, &root, local, pid.?));
     }
 
-    std.sort.heap(Occupier, out.items, {}, which.lessThan);
     return out.toOwnedSlice(gpa);
 }
 
@@ -156,11 +155,5 @@ fn describe(io: Io, gpa: Allocator, root: *Io.Dir, local_address: []const u8, pi
         return which.withheld(gpa, local_address, pid, "could not read the image path (access denied, or it has exited)");
 
     const path = link_buf[0..n];
-    return .{
-        .pid = pid,
-        .local_address = try gpa.dupe(u8, local_address),
-        .process_name = try gpa.dupe(u8, std.fs.path.basename(path)),
-        .path = try gpa.dupe(u8, path),
-        .identity_note = "",
-    };
+    return which.named(gpa, local_address, pid, path);
 }

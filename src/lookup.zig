@@ -51,6 +51,27 @@ pub fn withheld(
     };
 }
 
+/// One Occupier whose identity the OS named in full.
+///
+/// The counterpart to `withheld`, and beside it for the same reason: the two
+/// halves of the Occupier contract are one contract, not one copy per platform.
+/// `path` is borrowed and copied, so an adapter that had to allocate in order to
+/// resolve it frees its own and hands over a slice it does not own.
+pub fn named(
+    gpa: std.mem.Allocator,
+    local_address: []const u8,
+    pid: u32,
+    path: []const u8,
+) std.mem.Allocator.Error!Occupier {
+    return .{
+        .pid = pid,
+        .local_address = try gpa.dupe(u8, local_address),
+        .process_name = try gpa.dupe(u8, std.fs.path.basename(path)),
+        .path = try gpa.dupe(u8, path),
+        .identity_note = "",
+    };
+}
+
 /// Deterministic order: by pid, then by address, so a dual-stack pair lands
 /// IPv4 first and repeated runs print an identical table.
 pub fn lessThan(_: void, a: Occupier, b: Occupier) bool {
@@ -72,5 +93,46 @@ pub const LookupError = impl.LookupError || std.mem.Allocator.Error;
 ///
 /// Allocates the returned slice and every string in it from `gpa`.
 pub fn lookup(io: std.Io, gpa: std.mem.Allocator, port: u16) LookupError![]Occupier {
-    return impl.lookup(io, gpa, port);
+    const rows = try impl.lookup(io, gpa, port);
+    // Row order is part of what a caller is promised, so the seam applies it.
+    // Leaving it to each adapter is how a new platform ships rows in kernel
+    // order and the promise quietly stops being true.
+    std.sort.heap(Occupier, rows, {}, lessThan);
+    return rows;
+}
+
+const testing = std.testing;
+
+// One Occupier per socket, and the name is the basename while the Path is the
+// whole thing: CONTEXT.md avoids "executable" precisely because the name is not
+// the path, and user story 4 depends on telling a real install from a shim.
+test "named derives the process name from the path's basename" {
+    // basename follows the separator of the platform the binary was built for,
+    // and an adapter only ever resolves a native path, so the drive-letter form
+    // is the case worth pinning.
+    if (builtin.os.tag != .windows) return error.SkipZigTest;
+
+    const gpa = testing.allocator;
+    const o = try named(gpa, "0.0.0.0:53", 53, "C:\\Program Files\\nodejs\\node.exe");
+    defer gpa.free(o.local_address);
+    defer gpa.free(o.process_name);
+    defer gpa.free(o.path.?);
+
+    try testing.expectEqual(@as(?u32, 53), o.pid);
+    try testing.expectEqualStrings("node.exe", o.process_name);
+    try testing.expectEqualStrings("C:\\Program Files\\nodejs\\node.exe", o.path.?);
+    try testing.expectEqualStrings("", o.identity_note);
+}
+
+// Row order is a promise the seam makes rather than an accident of whichever
+// adapter produced the rows. A dual-stack pair is one process, so the two rows
+// are separated by address alone and the IPv4 one lands first.
+//
+// This passed on the first run: lessThan already existed and already behaved
+// this way, so this is characterisation of untested code, not a red-green cycle.
+test "a dual-stack pair sorts IPv4 first" {
+    const v4 = Occupier{ .pid = 53, .local_address = "0.0.0.0:53", .process_name = "x", .path = null, .identity_note = "" };
+    const v6 = Occupier{ .pid = 53, .local_address = "[::]:53", .process_name = "x", .path = null, .identity_note = "" };
+    try testing.expect(lessThan({}, v4, v6));
+    try testing.expect(!lessThan({}, v6, v4));
 }
