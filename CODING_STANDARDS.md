@@ -9,5 +9,6 @@
 - Lean on the dependencies already in the project before writing your own implementation or adding packages. Do not assume a library lacks a capability without checking its documentation and types.
 - Make architectural decisions for the long term. Do not accept a stopgap that only works for now and is meant to be replaced later.
 - Always make atomic commits with conventional commits style.
+- Pipe a multi-line commit message into git, or write it to a file first: `Get-Content msg.txt | git commit -F -`. A PowerShell here-string handed to `git commit -F -` as an argument arrives as a pathspec, and git reports the message itself as an unknown file.
 - Tautological tests are considered harmful. A test that only restates what the code does (e.g. asserting the implementation against itself, duplicating logic, or only checking happy-path outputs that mirror the production code) provides no value and gives false confidence. Every test must fail for a real, distinct reason if the production code is wrong.
 - Output raw source code only. Omit all inline explanations, block comments, and conversational text.
