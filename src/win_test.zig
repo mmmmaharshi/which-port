@@ -81,7 +81,9 @@ test "a bound Listening socket is Occupied by this process" {
     defer bound.close();
 
     const gpa = std.heap.page_allocator;
-    const rows = try which.lookup(gpa, bound.port);
+    var threaded: std.Io.Threaded = .init(gpa, .{});
+    defer threaded.deinit();
+    const rows = try which.lookup(threaded.io(), gpa, bound.port);
     defer gpa.free(rows);
 
     try std.testing.expect(rows.len > 0);

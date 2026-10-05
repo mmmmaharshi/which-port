@@ -65,7 +65,8 @@ pub const LookupError = Allocator.Error || error{ TableUnavailable };
 
 // --- entry point -------------------------------------------------------------
 
-pub fn lookup(gpa: Allocator, port: u16) LookupError![]Occupier {
+pub fn lookup(io: std.Io, gpa: Allocator, port: u16) LookupError![]Occupier {
+    _ = io;
     var out: std.ArrayList(Occupier) = .empty;
     errdefer out.deinit(gpa);
 
@@ -114,69 +115,10 @@ fn portOf(raw: u32) u16 {
 
 // --- address formatting ------------------------------------------------------
 
-const format = std.fmt.bufPrint;
+// Local addresses are formatted by the shared module so Windows, Linux and
+// macOS print byte-identical output. See CONTEXT.md: Local address.
+const addr = @import("addr.zig");
 
-fn addr4(buf: []u8, raw: u32, port: u16) ![]u8 {
-    const addr = @byteSwap(raw);
-    return format(buf, "{d}.{d}.{d}.{d}:{d}", .{
-        @as(u8, @truncate(addr >> 24)),
-        @as(u8, @truncate(addr >> 16)),
-        @as(u8, @truncate(addr >> 8)),
-        @as(u8, @truncate(addr)),
-        port,
-    });
-}
-
-/// `[::]:8080`, compressing the longest run of zero groups like every other
-/// tool prints it. A scope id would go inside the brackets before the colon.
-fn addr6(buf: []u8, raw: [16]u8, port: u16) ![]u8 {
-    var groups: [8]u16 = undefined;
-    for (&groups, 0..) |*g, i| g.* = @as(u16, @byteSwap(@as(*align(1) const u16, @ptrCast(&raw[i * 2])).*));
-
-    var best_start: usize = 0;
-    var best_len: usize = 0;
-    var run_start: usize = 0;
-    var run_len: usize = 0;
-    for (groups, 0..) |g, i| {
-        if (g == 0) {
-            if (run_len == 0) run_start = i;
-            run_len += 1;
-            if (run_len > best_len) {
-                best_len = run_len;
-                best_start = run_start;
-            }
-        } else run_len = 0;
-    }
-    if (best_len < 2) best_len = 0; // `::` must stand for at least two groups
-
-    var end: usize = 1; // buf[0] = '['
-    buf[0] = '[';
-    var i: usize = 0;
-    var wrote_any = false;
-    while (i < groups.len) : (i += 1) {
-        if (best_len != 0 and i == best_start) {
-            if (i == 0) {
-                buf[end] = ':';
-                end += 1;
-            }
-            buf[end] = ':';
-            end += 1;
-            i += best_len - 1;
-            continue;
-        }
-        if (wrote_any) {
-            buf[end] = ':';
-            end += 1;
-        }
-        const hex = try format(buf[end..], "{x}", .{groups[i]});
-        end += hex.len;
-        wrote_any = true;
-    }
-    buf[end] = ']';
-    end += 1;
-    const tail = try format(buf[end..], ":{d}", .{port});
-    return buf[0 .. end + tail.len];
-}
 
 // --- collectors --------------------------------------------------------------
 
@@ -187,8 +129,8 @@ fn collect4(gpa: Allocator, out: *std.ArrayList(Occupier), port: u16) LookupErro
     for (rows) |row| {
         if (portOf(row.dwLocalPort) != port) continue;
         // A 64-byte buffer against a 46-byte worst case (`[xxxx:...:xxxx]:65535`),
-// so the address always fits and the error is unreachable by construction.
-const local = addr4(&buf, row.dwLocalAddr, port) catch unreachable;
+        // so the address always fits and the error is unreachable by construction.
+        const local = addr.addr4(&buf, row.dwLocalAddr, port) catch unreachable;
 try out.append(gpa, try describe(gpa, local, row.dwOwningPid));
     }
 }
@@ -199,7 +141,7 @@ fn collect6(gpa: Allocator, out: *std.ArrayList(Occupier), port: u16) LookupErro
     var buf: [64]u8 = undefined;
     for (rows) |row| {
         if (portOf(row.dwLocalPort) != port) continue;
-        const local = addr6(&buf, row.ucLocalAddr, port) catch unreachable;
+        const local = addr.addr6(&buf, row.ucLocalAddr, port) catch unreachable;
 try out.append(gpa, try describe(gpa, local, row.dwOwningPid));
     }
 }

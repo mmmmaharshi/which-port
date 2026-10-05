@@ -26,7 +26,7 @@ const usage_text =
     \\
 ;
 
-pub fn main() u8 {
+pub fn main(init: std.process.Init.Minimal) u8 {
     var threaded: std.Io.Threaded = .init(std.heap.page_allocator, .{});
     const io = threaded.io();
 
@@ -34,12 +34,18 @@ pub fn main() u8 {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const port = parsePort(arena) catch {
+    const port = parsePort(init, arena) catch {
         return badUsage(io, "which-port: expected exactly one port, 1 to 65535\n\n");
     };
 
-    const occupiers = which.lookup(arena, port) catch {
-        write(io, std.Io.File.stderr(), "which-port: the socket table could not be read\n") catch {};
+    const occupiers = which.lookup(io, arena, port) catch |err| {
+        // A socket with an unreadable owner is not Free, so it must never be
+        // reported as Free. See CONTEXT.md.
+        const msg = if (err == error.OwnerUnreadable)
+            "which-port: a Listening socket is on this port but its owner could not be read\n"
+        else
+            "which-port: the socket table could not be read\n";
+        write(io, std.Io.File.stderr(), msg) catch {};
         return exit_bad_usage;
     };
 
@@ -72,8 +78,8 @@ pub fn main() u8 {
 }
 
 /// Exactly one port. No ranges, no service names, no second argument.
-fn parsePort(arena: Allocator) !u16 {
-    const argv = try commandLine(arena);
+fn parsePort(init: std.process.Init.Minimal, arena: Allocator) !u16 {
+    const argv = try init.args.toSlice(arena);
     if (argv.len != 2) return error.BadUsage;
     const raw = argv[1];
     if (raw.len == 0 or raw[0] == '-') return error.BadUsage;
@@ -142,16 +148,3 @@ fn write(io: std.Io, file: std.Io.File, bytes: []const u8) !void {
     try file.writeStreamingAll(io, bytes);
 }
 
-const windows = struct {
-    extern "kernel32" fn GetCommandLineW() [*:0]const u16;
-};
-
-fn commandLine(arena: Allocator) ![]const [:0]const u8 {
-    const Args = std.process.Args;
-    const vector: Args.Vector = switch (builtin.os.tag) {
-        .windows => std.mem.span(windows.GetCommandLineW()),
-        // The POSIX command line arrives with the /proc ticket.
-        else => @compileError("argv on " ++ @tagName(builtin.os.tag) ++ " arrives with its own ticket"),
-    };
-    return (Args{ .vector = vector }).toSlice(arena);
-}

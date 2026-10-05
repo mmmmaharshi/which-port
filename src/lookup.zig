@@ -26,7 +26,7 @@ pub const Occupier = struct {
 
 const impl = switch (builtin.os.tag) {
     .windows => @import("win.zig"),
-    .linux => @compileError("Linux lookup arrives with the /proc ticket"),
+    .linux => @import("lin.zig"),
     .macos => @compileError("macOS lookup arrives with the lsof ticket"),
     else => @compileError("which-port supports Windows, Linux and macOS"),
 };
@@ -37,6 +37,6 @@ pub const LookupError = impl.LookupError || std.mem.Allocator.Error;
 /// ordered by pid so that repeated runs print an identical table.
 ///
 /// Allocates the returned slice and every string in it from `gpa`.
-pub fn lookup(gpa: std.mem.Allocator, port: u16) LookupError![]Occupier {
-return impl.lookup(gpa, port);
+pub fn lookup(io: std.Io, gpa: std.mem.Allocator, port: u16) LookupError![]Occupier {
+    return impl.lookup(io, gpa, port);
 }
