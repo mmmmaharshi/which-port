@@ -102,13 +102,24 @@ jobs:
       - name: Publish
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          # gh is not authenticated by default. actions/checkout leaves no token
+          # in the environment, so this step would fail at the push with an
+          # unhelpful "could not read Username". Publishing a release needs one.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           prerelease=""
           case "$VERSION" in
             *-rc*|*-beta*|*-alpha*) prerelease="--prerelease" ;;
           esac
-          git tag "$VERSION"
-          git push origin "$VERSION"
+          # Create the tag only if it is missing. The push trigger means it
+          # almost always exists already, and `git tag` on an existing tag exits
+          # 128 and takes the whole release with it -- which is what the first
+          # run of this workflow did. The manual path has no tag yet, so both
+          # cases have to work.
+          if ! git rev-parse "$VERSION" >/dev/null 2>&1; then
+            git tag "$VERSION"
+            git push origin "$VERSION"
+          fi
           # Notes come from the README rather than a changelog nobody maintains:
           # what the tool does, how to install it, and what the exit codes mean
           # is what a reader of the release page needs.
