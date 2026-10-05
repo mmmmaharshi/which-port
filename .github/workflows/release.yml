@@ -51,8 +51,11 @@ jobs:
           sha=1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
           curl -sSfL "$url" -o zig.tar.xz
           echo "$sha  zig.tar.xz" | sha256sum -c -
+          # The tarball's top directory carries the target triple, so it is
+          # zig-x86_64-linux-0.17.0 and not zig-0.17.0. Symlinking to the shorter
+          # name leaves a dangling link and `zig version` exits 127.
           sudo tar -xJf zig.tar.xz -C /usr/local
-          sudo ln -sf /usr/local/zig-0.17.0/zig /usr/local/bin/zig
+          sudo ln -sf /usr/local/zig-x86_64-linux-0.17.0/zig /usr/local/bin/zig
           zig version
 
       - name: Build every shipped target
