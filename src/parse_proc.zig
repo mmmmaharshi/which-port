@@ -41,14 +41,14 @@ fn parseLine(gpa: std.mem.Allocator, line: []const u8, out: *std.ArrayList(Socke
 
     // Column 0 is `sl:` ("0:"). Any other shape means the layout moved under us,
     // and guessing is how a Live port gets reported as Free.
-if (sl.len < 2 or sl[sl.len - 1] != ':') return error.Unreadable;
+    if (sl.len < 2 or sl[sl.len - 1] != ':') return error.Unreadable;
     const local_field = fields.next() orelse return error.Unreadable;
     if (fields.next() == null) return error.Unreadable; // rem_address
 
     const st = fields.next() orelse return error.Unreadable;
     if (!std.mem.eql(u8, st, listen_hex)) return;
 
-// Between `st` and `inode` sit five whitespace-separated tokens, not eight:
+    // Between `st` and `inode` sit five whitespace-separated tokens, not eight:
     // the kernel prints tx_queue:rx_queue and tr:tm->when as single
     // colon-joined tokens even though they are four header columns. Counting
     // header columns instead of tokens lands on the wrong field and reads a
@@ -61,7 +61,7 @@ if (sl.len < 2 or sl[sl.len - 1] != ':') return error.Unreadable;
     const inode_text = fields.next() orelse return error.Unreadable;
     const inode = std.fmt.parseInt(u64, inode_text, 10) catch return error.Unreadable;
 
-// The address is `HEX:HEXPORT`. Read it from the token we already have: the
+    // The address is `HEX:HEXPORT`. Read it from the token we already have: the
     // line also begins `0:`, so scanning for the first colon finds the wrong one.
     const sep = std.mem.indexOfScalar(u8, local_field, ':') orelse return error.Unreadable;
     const addr_hex = local_field[0..sep];
@@ -148,11 +148,9 @@ test "a column that moved is reported, never guessed" {
     var out: std.ArrayList(Socket) = .empty;
     const gpa = testing.allocator;
     defer out.deinit(gpa);
-// `sl` is not `N:`. Reading this as if it were would invent an Occupier.
+    // `sl` is not `N:`. Reading this as if it were would invent an Occupier.
     const head = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n";
     try testing.expectError(error.Unreadable, parse(gpa, head ++ "   x 0100007F:1F90 00000000:0000 0A 0 0 0 0 0 0 0 42\n", &out));
     // Truncated before the inode column.
     try testing.expectError(error.Unreadable, parse(gpa, head ++ "   0: 0100007F:1F90 00000000:0000 0A 0 0\n", &out));
 }
-
-

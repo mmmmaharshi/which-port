@@ -112,4 +112,3 @@ fn badUsage(io: std.Io, reason: []const u8) u8 {
 fn write(io: std.Io, file: std.Io.File, bytes: []const u8) !void {
     try file.writeStreamingAll(io, bytes);
 }
-

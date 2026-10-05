@@ -33,6 +33,11 @@ function Invoke-Step([string]$name, [scriptblock]$body) {
 }
 
 # --- shared: parser tests are OS-free, so run them once per target -----------
+Invoke-Step 'formatting' {
+    $bad = Get-ChildItem $root\src -Filter *.zig | Where-Object { zig fmt --check $_.FullName 2>&1 }
+    if ($bad) { throw "not zig-fmt clean: $($bad.Name -join ', ')" }
+}
+
 Invoke-Step 'format + parser tests (windows)' {
     zig test src/addr.zig
     zig test src/parse_proc.zig

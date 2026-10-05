@@ -61,7 +61,7 @@ const Tcp6Row = extern struct {
     dwOwningPid: u32,
 };
 
-pub const LookupError = Allocator.Error || error{ TableUnavailable };
+pub const LookupError = Allocator.Error || error{TableUnavailable};
 
 // --- entry point -------------------------------------------------------------
 
@@ -117,7 +117,6 @@ const addr = @import("addr.zig");
 // row order are one contract, not one copy per platform.
 const which = @import("lookup.zig");
 
-
 // --- collectors --------------------------------------------------------------
 
 fn collect4(gpa: Allocator, out: *std.ArrayList(Occupier), port: u16) LookupError!void {
@@ -129,7 +128,7 @@ fn collect4(gpa: Allocator, out: *std.ArrayList(Occupier), port: u16) LookupErro
         // A 64-byte buffer against a 46-byte worst case (`[xxxx:...:xxxx]:65535`),
         // so the address always fits and the error is unreachable by construction.
         const local = addr.addr4(&buf, row.dwLocalAddr, port) catch unreachable;
-try out.append(gpa, try describe(gpa, local, row.dwOwningPid));
+        try out.append(gpa, try describe(gpa, local, row.dwOwningPid));
     }
 }
 
@@ -140,7 +139,7 @@ fn collect6(gpa: Allocator, out: *std.ArrayList(Occupier), port: u16) LookupErro
     for (rows) |row| {
         if (portOf(row.dwLocalPort) != port) continue;
         const local = addr.addr6(&buf, row.ucLocalAddr, port) catch unreachable;
-try out.append(gpa, try describe(gpa, local, row.dwOwningPid));
+        try out.append(gpa, try describe(gpa, local, row.dwOwningPid));
     }
 }
 
