@@ -36,6 +36,15 @@ function Invoke-Step([string]$name, [scriptblock]$body) {
 Invoke-Step 'format + parser tests (windows)' {
     zig test src/addr.zig
     zig test src/parse_proc.zig
+    zig test src/report.zig
+}
+
+# main.zig is reached by no test file, so nothing above compiles it. Without
+# this a change that broke argument parsing, the table layout or an exit code
+# would leave every suite green.
+Invoke-Step 'the binary compiles' {
+    zig build-exe src/main.zig -femit-bin="$env:TEMP\which-port-buildcheck.exe"
+    Remove-Item "$env:TEMP\which-port-buildcheck.exe" -ErrorAction SilentlyContinue
 }
 
 Invoke-Step 'windows live round-trip' {
