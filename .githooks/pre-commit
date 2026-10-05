@@ -1,0 +1,12 @@
+#!/bin/sh
+# Runs the glossary check on every commit. Fast: pure PowerShell string
+# matching, no toolchain, so the cost of running it is far below the cost of
+# reviewing a commit that reintroduced an avoided synonym.
+#
+# Wired up by `git config core.hooksPath .githooks`, which is local git config
+# and does not travel with a clone. A fresh clone runs:
+#
+#     git config core.hooksPath .githooks
+set -e
+cd "$(git rev-parse --show-toplevel)"
+pwsh -NoProfile -File scripts/check-vocabulary.ps1

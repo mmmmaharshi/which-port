@@ -1,0 +1,16 @@
+#!/bin/sh
+# Runs every suite on every platform this machine can, before a push reaches the
+# remote. Pre-push rather than pre-commit because it cross-compiles the Linux
+# test binary and runs it in WSL, which is far too slow to sit in front of every
+# commit but cheap enough to sit in front of every push.
+#
+# Suites for platforms this machine cannot run report SKIPPED and pass, so the
+# hook never blocks a push that the local machine was simply unable to check.
+#
+# Wired up by `git config core.hooksPath .githooks`, which is local git config
+# and does not travel with a clone. A fresh clone runs:
+#
+#     git config core.hooksPath .githooks
+set -e
+cd "$(git rev-parse --show-toplevel)"
+pwsh -NoProfile -File scripts/test-all.ps1
