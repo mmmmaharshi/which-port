@@ -21,21 +21,42 @@ you can branch on.
 Grab the file for your platform from the [releases page](https://github.com/mmmmaharshi/which-port/releases),
 or build it yourself. Either way it is one file with nothing beside it.
 
-### Windows: unblock the download first
+### Windows
 
-Windows will not run a downloaded executable it has not seen before, and it says
-so with a "Windows protected your PC" dialog. That is SmartScreen reacting to an
-unsigned binary, not a problem with this one — it happens to `fd`, `bat` and
-`ripgrep` too until they are signed.
+```powershell
+iwr -useb https://raw.githubusercontent.com/mmmmaharshi/which-port/master/scripts/install.ps1 | iex
+```
 
-Clear it once per download:
+That downloads the latest release, checks it against `SHA256SUMS`, clears the
+download block, and puts it on your `PATH`. No elevation, no UAC prompt. It
+installs to `%LOCALAPPDATA%\Programs\which-port`, so **open a new terminal**
+afterwards — a `PATH` change is not visible to the shell you ran it from.
+
+Two ways to run it more carefully:
+
+```powershell
+# Pin a version rather than tracking latest
+iwr -useb https://raw.githubusercontent.com/mmmmaharshi/which-port/master/scripts/install.ps1 | iex; install -Version v0.1.1
+
+# Or download it first and read it, which is the right instinct for a script
+# you did not write
+curl -o install.ps1 https://raw.githubusercontent.com/mmmmaharshi/which-port/master/scripts/install.ps1
+.\install.ps1
+```
+
+If you'd rather not run a script at all, download the `.exe` from the releases
+page and clear the block Windows puts on it:
 
 ```powershell
 Unblock-File -Path .\which-port-x86_64-windows.exe
 ```
 
-Then copy it somewhere on your `PATH`. Nothing is installed: no Program Files, no
-registry, no uninstaller. Deleting the file is the uninstall.
+You will see a "Windows protected your PC" dialog the first time otherwise. That
+is SmartScreen reacting to an unsigned binary, not a problem with this one — it
+happens to `fd`, `bat` and `ripgrep` too until they are signed.
+
+Nothing goes to Program Files, there is no registry entry and no uninstaller.
+Deleting the file and the directory is the uninstall.
 
 ### Linux and macOS
 
