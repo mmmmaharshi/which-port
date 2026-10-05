@@ -2,6 +2,15 @@
 
 Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
+## A label is a summary, the body is the truth
+
+`ready-for-agent` means fully specified, not unblocked. A ticket can be complete
+and still blocked on something outside an agent's reach: a credential, a device,
+a decision only a person can make. Read a ticket's `Blocked by` before starting
+it, and treat that line as authoritative over the label. A blocked ticket
+carries `needs-info`, whatever else it also says. Native issue dependencies,
+where the tracker has them, are the machine-readable form of the same fact.
+
 ## Conventions
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
