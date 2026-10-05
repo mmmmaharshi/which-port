@@ -21,11 +21,21 @@ you can branch on.
 No release binaries yet, so build it. Requires [Zig](https://ziglang.org) 0.17.
 
 ```sh
-zig build-exe src/main.zig -O ReleaseSmall --name which-port
+zig build
 ```
 
-That leaves one file, `which-port`, of about 500 KB, with nothing beside it. Copy
-it onto your `PATH`. No runtime, no package manager, no configuration.
+That leaves one file, `zig-out/bin/which-port`, of about 500 KB, with nothing
+beside it. Copy it onto your `PATH`. No runtime, no package manager, no
+configuration.
+
+To build every target a release attaches, from the same machine:
+
+```sh
+zig build all-targets
+```
+
+They land in `zig-out/release/`, each named for its target, so a release is a
+directory listing rather than six hand-typed commands.
 
 Works on Windows and Linux today, and needs neither an elevated shell nor root.
 
@@ -105,10 +115,14 @@ table.
 pwsh scripts/test-all.ps1
 ```
 
-One command runs every suite this machine can: formatting, the four unit
-suites, a compile of the binary itself, a live round-trip on Windows, the Linux
-suite cross-compiled and run under WSL, and a glossary check that fails the run
-if the code has drifted from the vocabulary in [`CONTEXT.md`](CONTEXT.md).
+One command runs every suite this machine can: formatting, the four unit suites,
+a compile of the binary itself, a compile of every shipped target, a live
+round-trip on Windows, the Linux suite cross-compiled and run under WSL, and a
+glossary check that fails the run if the code has drifted from the vocabulary in
+[`CONTEXT.md`](CONTEXT.md).
+
+`zig build test` runs just the four OS-free suites, for when you want the fast
+loop.
 
 To have that gate your commits, arm the hooks once:
 
