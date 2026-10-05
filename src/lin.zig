@@ -82,10 +82,10 @@ pub fn lookup(io: Io, gpa: Allocator, port: u16) LookupError![]Occupier {
             addr.addr6(&buf, s.raw6, s.port) catch unreachable
         else
             addr.addr4(&buf, s.raw4, s.port) catch unreachable;
-        // A socket with no readable owner is still an Occupied socket, and an
-        // unprivileged caller cannot read most processes' fd directories — so
-        // this is the common case, not a corner. Report the socket and say the
-        // process is unknown. Calling it Free would be a lie. See CONTEXT.md.
+        // A Listening socket whose Occupier we could not name is still Occupied,
+        // and an unprivileged caller cannot read most processes' fd directories
+        // — so this is the common case, not a corner. Report the socket and say
+        // the process is unknown. Calling it Free would be a lie. See CONTEXT.md.
         const pid = pids.get(s.inode);
         if (pid == null) {
             try out.append(gpa, try which.withheld(gpa, local, null, "the holding process could not be identified (access denied, or it has exited)"));

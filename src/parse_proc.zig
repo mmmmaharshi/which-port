@@ -1,5 +1,5 @@
 //! Parses the Linux proc network tables. Deliberately free of any OS dependency
-//! so it compiles, and is tested, on any host — the fixture beside it came from
+//! so it compiles, and is tested, on any machine — the fixture beside it came from
 //! a real kernel, not from this file's author's imagination.
 //!
 //! The one column that matters more than the others is the inode: it is how the
