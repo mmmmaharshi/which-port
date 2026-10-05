@@ -47,25 +47,23 @@ jobs:
         shell: pwsh
         run: ./scripts/test-all.ps1
 
-      # A raw .exe is not something a browser will download usefully and a bare
-      # ELF has no extension to mark it executable, so nothing ships unwrapped.
-      # The originals are deleted rather than kept: uploading both a binary and
-      # its archive gives a reader two files per target and no way to know which
-      # one is meant.
+      # Raw, for every target.
       #
-      # `zip` is not installed on a runner image, so it is fetched rather than
-      # assumed. Verified here by running the step and watching it fail on the
-      # missing binary before this was pinned.
-      - name: Wrap the artifacts
+      # The previous release shipped .zip on Windows and .gz on Linux, on the
+      # reasoning that a browser will not download a raw .exe usefully. That was
+      # asserted without checking and is wrong: GitHub serves an .exe as
+      # application/octet-stream and it downloads fine. `fd` and `bat` ship raw
+      # Windows binaries; `ripgrep` and `dust` ship archives. There is no
+      # convention here to follow, only a choice.
+      #
+      # Raw wins for this tool because its whole pitch is "copy one file onto
+      # your PATH". An archive inserts an extraction step into the one command
+      # the README is built around, and in exchange saves 340 KB on the Windows
+      # build. Compression is not needed for correctness and is not what makes a
+      # download work.
+      - name: List the artifacts
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq zip
           cd zig-out/release
-          for f in which-port-*; do
-            case "$f" in
-              *.exe) zip -q "$f.zip" "$f" && rm "$f" ;;
-              *)     gzip -9 -f "$f" ;;
-            esac
-          done
           ls -la
 
       # Written to the parent and moved back in, because `sha256sum *` would
