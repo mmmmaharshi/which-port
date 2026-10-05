@@ -1,0 +1,45 @@
+# which-port
+
+`which-port` answers one question: which process is holding a TCP port right
+now, and where does it live. It is a single-purpose diagnostic for the moment a
+port is already in use and you need to know what to kill, or what you forgot to
+start.
+
+## Language
+
+**Port**:
+A TCP port number on this machine.
+_Avoid_: socket, endpoint
+
+**Listening socket**:
+A socket in the LISTEN state bound to a local port. This is the only thing
+`which-port` considers.
+_Avoid_: open port, active port, bound port, in-use port
+
+**Occupier**:
+The process holding a listening socket on a given port. One process can occupy
+the same port more than once, once per socket.
+_Avoid_: owner, "the process using the port" (that phrasing wrongly includes clients)
+
+**Occupancy**:
+The fact that a port has at least one listening socket. A port is occupied or
+free, never in between.
+_Avoid_: in use, taken, claimed, busy
+
+**Free port**:
+A port with no listening socket. Free does not mean bindable; something else
+could be holding it in a state this tool does not report.
+_Avoid_: unused, available, unbound
+
+**Local address**:
+The address a listening socket is bound to. `0.0.0.0` and `[::]` mean every
+interface; `127.0.0.1` means loopback only. The same port usually has one
+occupier but several local addresses.
+_Avoid_: host, interface, NIC
+
+**Path**:
+The full filesystem path of the occupier's executable. This is optional
+metadata: the OS withholds it from unprivileged callers for processes it
+considers privileged, and `which-port` still reports the occupier without it.
+A blank path is never an error.
+_Avoid_: location, executable (the name is not the path)

@@ -1,0 +1,8 @@
+# Zig
+.zig-cache/
+zig-out/
+*.exe
+
+# Agent-local state (reinstallable; skills are pinned by skills-lock.json)
+.opencode/
+.agents/
