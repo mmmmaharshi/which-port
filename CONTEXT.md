@@ -43,3 +43,11 @@ metadata: the OS withholds it from unprivileged callers for processes it
 considers privileged, and `which-port` still reports the occupier without it.
 A blank path is never an error.
 _Avoid_: location, executable (the name is not the path)
+
+**Withheld identity**:
+The state of an occupier whose metadata the OS refused to an unprivileged
+caller. On Windows that costs the Path *and* the process name, because a process
+handle is the only way to ask either question. `which-port` reports the occupier
+by PID and socket regardless, and says why the rest is missing. Withholding is
+a permission boundary, not a bug: do not "fix" it by demanding elevation.
+_Avoid_: permission error, lookup failure, inaccessible process
