@@ -1,0 +1,117 @@
+# Builds a release on a tag and attaches it to the GitHub Release.
+#
+# Replaces a hand-typed cross-compilation loop with something reproducible: the
+# binaries come from a tagged commit with logs anyone can read, rather than from
+# one person's machine on one afternoon.
+#
+# A tag whose name ends in -rc or -beta is a prerelease, so the "latest" release
+# on the repo page never points at a candidate.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  # Manual, for cutting a release without a tag first. The version is required,
+  # so the tag cannot be forgotten: a release with no tag is unreachable from
+  # `git clone`, and the checksum file then refers to a commit nothing points at.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, with the v (e.g. v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          # Pinned to the version ADR 0001 chose, so a release cannot silently
+          # change shape because the toolchain moved.
+          version: 0.17.0
+
+      - name: Build every shipped target
+        run: zig build all-targets
+
+      # The test suite is PowerShell because the Windows and Linux invocations
+      # genuinely differ, and a step that cannot run is a step nobody trusts. On
+      # a Linux runner the parser and report suites run natively, which is the
+      # thing a Windows-only runner cannot do.
+      - name: Checks
+        shell: pwsh
+        run: ./scripts/test-all.ps1
+
+      # A raw .exe is not something a browser will download usefully and a bare
+      # ELF has no extension to mark it executable, so nothing ships unwrapped.
+      # The originals are deleted rather than kept: uploading both a binary and
+      # its archive gives a reader two files per target and no way to know which
+      # one is meant.
+      #
+      # `zip` is not installed on a runner image, so it is fetched rather than
+      # assumed. Verified here by running the step and watching it fail on the
+      # missing binary before this was pinned.
+      - name: Wrap the artifacts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq zip
+          cd zig-out/release
+          for f in which-port-*; do
+            case "$f" in
+              *.exe) zip -q "$f.zip" "$f" && rm "$f" ;;
+              *)     gzip -9 -f "$f" ;;
+            esac
+          done
+          ls -la
+
+      # Written to the parent and moved back in, because `sha256sum *` would
+      # otherwise checksum SHA256SUMS as it was being written.
+      #
+      # The sed is not decoration. Whether sha256sum marks each line with a `*`
+      # depends on how that coreutils build was compiled, so the separator
+      # varies by platform, and the asterisk becomes part of the filename a
+      # reader copies out. Homebrew and Scoop match on the digest and the name,
+      # so `*which-port-...` is a string that verifies nothing. Normalising to
+      # `digest␣␣name` makes the file identical wherever it was generated.
+      - name: Checksums
+        run: |
+          cd zig-out/release
+          sha256sum * > ../RAW
+          sed 's/^\([0-9a-f]*\) [*]\{1\}/\1  /' ../RAW > ../SHA256SUMS
+          mv ../SHA256SUMS .
+          rm ../RAW
+          # Printed on purpose: a checksum nobody can see is a checksum nobody
+          # checks. Homebrew and Scoop both refuse to install without this file.
+          cat SHA256SUMS
+
+      - name: Resolve the version
+        id: version
+        run: |
+          version="${{ inputs.version }}"
+          if [ -z "$version" ]; then version="${GITHUB_REF_NAME}"; fi
+          case "$version" in
+            v*) ;;
+            *) echo "version must start with v, got: $version"; exit 1 ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          prerelease=""
+          case "$VERSION" in
+            *-rc*|*-beta*|*-alpha*) prerelease="--prerelease" ;;
+          esac
+          git tag "$VERSION"
+          git push origin "$VERSION"
+          # Notes come from the README rather than a changelog nobody maintains:
+          # what the tool does, how to install it, and what the exit codes mean
+          # is what a reader of the release page needs.
+          gh release create "$VERSION" zig-out/release/* $prerelease \
+            --title "which-port $VERSION" \
+            --notes-file README.md
