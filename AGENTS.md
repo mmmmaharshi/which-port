@@ -1,15 +1,20 @@
 # AGENTS.md
 
-## Agent skills
+## Skills
 
-### Issue tracker
+`.agents/skills/`, pinned by `skills-lock.json` and restored by running
+`/setup-matt-pocock-skills`. The directory is gitignored, so a fresh clone
+starts with none. `/ask-matt` routes a situation to the right one.
 
-Issues live in this repo's GitHub Issues, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+## Checks
 
-### Triage labels
+`pwsh scripts/test-all.ps1` runs every suite this machine can. `.githooks/` runs
+it pre-push and the glossary check pre-commit; neither is active until
+`git config core.hooksPath .githooks`.
 
-Five canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+## Repo docs
 
-### Domain docs
-
-Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+- **Issues**: GitHub Issues, via the `gh` CLI. `docs/agents/issue-tracker.md`
+- **Triage labels**: `needs-triage`, `needs-info`, `ready-for-agent`,
+  `ready-for-human`, `wontfix`. `docs/agents/triage-labels.md`
+- **Domain language**: `CONTEXT.md` and `docs/adr/`. `docs/agents/domain.md`
