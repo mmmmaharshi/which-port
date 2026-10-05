@@ -25,7 +25,41 @@ permissions:
   contents: write
 
 jobs:
+  # Proves the parts that do not depend on a platform compile and pass on a real
+  # macOS runner, and that the release targets still cross-compile from a macOS
+  # host. ADR 0001 claims the toolchain targets every platform from one host, and
+  # until now that claim was only ever checked from Windows.
+  #
+  # macOS produces no binaries yet. src/lookup.zig is a compile error on .macos
+  # because the lsof lookup does not exist, so `zig build all-targets` skips those
+  # two targets and the suites here are the three that take no platform at all.
+  # When the lookup lands, drop .buildable = false from those two entries in
+  # build.zig and this job picks up both macOS binaries on the next release.
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Zig
+        run: |
+          url=https://ziglang.org/download/0.17.0/zig-aarch64-macos-0.17.0.tar.xz
+          sha=$(curl -sSfL https://ziglang.org/download/index.json | jq -r '."0.17.0"."aarch64-macos".shasum')
+          curl -sSfL "$url" -o zig.tar.xz
+          echo "$sha  zig.tar.xz" | shasum -a 256 -c -
+          tar -xJf zig.tar.xz
+          echo "$PWD/zig-aarch64-macos-0.17.0" >> "$GITHUB_PATH"
+
+      - name: Unit suites that take no platform
+        run: |
+          zig test src/addr.zig
+          zig test src/parse_proc.zig
+          zig test src/report.zig
+
+      - name: Every buildable target still cross-compiles from macOS
+        run: zig build all-targets
+
   release:
+    needs: macos
     # Pinned rather than ubuntu-latest, which migrates to Ubuntu 26 on 19 October
     # 2026. Pinning means an OS change cannot land in the middle of a release,
     # and this runner image is the one every published release was built on.
