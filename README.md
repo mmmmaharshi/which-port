@@ -18,7 +18,42 @@ you can branch on.
 
 ## Install
 
-No release binaries yet, so build it. Requires [Zig](https://ziglang.org) 0.17.
+Grab the file for your platform from the [releases page](https://github.com/mmmmaharshi/which-port/releases),
+or build it yourself. Either way it is one file with nothing beside it.
+
+### Windows: unblock the download first
+
+Windows will not run a downloaded executable it has not seen before, and it says
+so with a "Windows protected your PC" dialog. That is SmartScreen reacting to an
+unsigned binary, not a problem with this one — it happens to `fd`, `bat` and
+`ripgrep` too until they are signed.
+
+Clear it once per download:
+
+```powershell
+Unblock-File -Path .\which-port-x86_64-windows.exe
+```
+
+Then copy it somewhere on your `PATH`. Nothing is installed: no Program Files, no
+registry, no uninstaller. Deleting the file is the uninstall.
+
+### Linux and macOS
+
+```sh
+curl -LO https://github.com/mmmmaharshi/which-port/releases/latest/download/which-port-x86_64-linux-musl
+chmod +x which-port-x86_64-linux-musl
+sudo mv which-port-x86_64-linux-musl /usr/local/bin/which-port
+```
+
+The Linux build is statically linked, so it needs nothing installed beside it —
+not even libc. Verify what you downloaded against the `SHA256SUMS` on the release
+page:
+
+```sh
+sha256sum which-port-x86_64-linux-musl
+```
+
+### Building it yourself
 
 ```sh
 zig build
