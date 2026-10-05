@@ -34,7 +34,9 @@ function Invoke-Step([string]$name, [scriptblock]$body) {
 
 # --- shared: parser tests are OS-free, so run them once per target -----------
 Invoke-Step 'formatting' {
-    $bad = Get-ChildItem $root\src -Filter *.zig | Where-Object { zig fmt --check $_.FullName 2>&1 }
+    $bad = Get-ChildItem $root\src, $root -Filter *.zig -File |
+        Where-Object { $_.Name -ne 'build.zig' -or $_.DirectoryName -eq $root } |
+        Where-Object { zig fmt --check $_.FullName 2>&1 }
     if ($bad) { throw "not zig-fmt clean: $($bad.Name -join ', ')" }
 }
 
@@ -51,6 +53,13 @@ Invoke-Step 'format + parser tests (windows)' {
 Invoke-Step 'the binary compiles' {
     zig build-exe src/main.zig -femit-bin="$env:TEMP\which-port-buildcheck.exe"
     Remove-Item "$env:TEMP\which-port-buildcheck.exe" -ErrorAction SilentlyContinue
+}
+
+# The release build, built every run. It is slow only in the sense that it
+# compiles six targets, and it is the step that catches a change which compiles
+# on this machine and nowhere else.
+Invoke-Step 'every shipped target compiles' {
+    zig build all-targets
 }
 
 Invoke-Step 'windows live round-trip' {
