@@ -1,6 +1,6 @@
 # which-port
 
-Answers one question: which process is holding this TCP port right now.
+Reports the process holding a TCP port.
 
 ```
 > which-port 4711
@@ -9,17 +9,10 @@ ADDRESS       PID    PROCESS   PATH
 [::]:4711     19912  pwsh.exe  C:\Program Files\PowerShell\7\pwsh.exe
 ```
 
-You reached for `netstat -ano` and got every socket on the machine in a
-fixed-width table you now have to re-read by eye. `Get-NetTCPConnection` is
-slower and hands back objects whose property names you have to remember. The
-Process Explorer dialog is several clicks away from the terminal error that
-prompted the question. This is the one question, answered directly, in a script
-you can branch on.
+One port in, one table out. The exit code carries the answer, so a script never
+parses the text.
 
 ## Install
-
-Grab the file for your platform from the [releases page](https://github.com/mmmmaharshi/which-port/releases),
-or build it yourself. Either way it is one file with nothing beside it.
 
 ### Windows
 
@@ -27,38 +20,27 @@ or build it yourself. Either way it is one file with nothing beside it.
 iwr -useb https://raw.githubusercontent.com/mmmmaharshi/which-port/master/scripts/install.ps1 | iex
 ```
 
-That downloads the latest release, checks it against `SHA256SUMS`, clears the
-download block, and puts it on your `PATH`. No elevation, no UAC prompt. It
-installs to `%LOCALAPPDATA%\Programs\which-port`, so **open a new terminal**
-afterwards — a `PATH` change is not visible to the shell you ran it from.
+The script downloads the latest release, verifies it against `SHA256SUMS`, clears
+the download block, and adds the directory to your user `PATH`. It needs no
+elevation and installs to `%LOCALAPPDATA%\Programs\which-port`.
 
-Two ways to run it more carefully:
+Open a new terminal afterwards. A `PATH` change is not visible to the shell that
+made it.
 
-```powershell
-# Pin a version rather than tracking latest
-iwr -useb https://raw.githubusercontent.com/mmmmaharshi/which-port/master/scripts/install.ps1 | iex; install -Version v0.1.1
-
-# Or download it first and read it, which is the right instinct for a script
-# you did not write
-curl -o install.ps1 https://raw.githubusercontent.com/mmmmaharshi/which-port/master/scripts/install.ps1
-.\install.ps1
-```
-
-If you'd rather not run a script at all, download the `.exe` from the releases
-page and clear the block Windows puts on it:
+To pin a version, download the script and pass the argument:
 
 ```powershell
-Unblock-File -Path .\which-port-x86_64-windows.exe
+iwr -useb https://raw.githubusercontent.com/mmmmaharshi/which-port/master/scripts/install.ps1 -OutFile install.ps1
+.\install.ps1 -Version v0.1.1
 ```
 
-You will see a "Windows protected your PC" dialog the first time otherwise. That
-is SmartScreen reacting to an unsigned binary, not a problem with this one — it
-happens to `fd`, `bat` and `ripgrep` too until they are signed.
+To choose the directory yourself, and skip the `PATH` change:
 
-Nothing goes to Program Files, there is no registry entry and no uninstaller.
-Deleting the file and the directory is the uninstall.
+```powershell
+.\install.ps1 -Dir C:\tools
+```
 
-### Linux and macOS
+### Linux
 
 ```sh
 curl -LO https://github.com/mmmmaharshi/which-port/releases/latest/download/which-port-x86_64-linux-musl
@@ -66,34 +48,32 @@ chmod +x which-port-x86_64-linux-musl
 sudo mv which-port-x86_64-linux-musl /usr/local/bin/which-port
 ```
 
-The Linux build is statically linked, so it needs nothing installed beside it —
-not even libc. Verify what you downloaded against the `SHA256SUMS` on the release
-page:
+Check the download against `SHA256SUMS` on the
+[releases page](https://github.com/mmmmaharshi/which-port/releases):
 
 ```sh
 sha256sum which-port-x86_64-linux-musl
 ```
 
-### Building it yourself
+The Linux build is statically linked, so it needs nothing beside it, not even
+libc.
 
-```sh
-zig build
+### Why Windows blocks the download
+
+Windows shows a "Windows protected your PC" dialog before running any executable
+it has not seen before. SmartScreen objects to the missing signature, not to this
+binary. `fd`, `bat`, and `ripgrep` carry the same warning until they are signed.
+
+If you download the `.exe` yourself, clear the block with:
+
+```powershell
+Unblock-File -Path .\which-port-x86_64-windows.exe
 ```
 
-That leaves one file, `zig-out/bin/which-port`, of about 500 KB, with nothing
-beside it. Copy it onto your `PATH`. No runtime, no package manager, no
-configuration.
+### What "installed" means
 
-To build every target a release attaches, from the same machine:
-
-```sh
-zig build all-targets
-```
-
-They land in `zig-out/release/`, each named for its target, so a release is a
-directory listing rather than six hand-typed commands.
-
-Works on Windows and Linux today, and needs neither an elevated shell nor root.
+One file on your `PATH`. Nothing goes to Program Files, and there is no registry
+entry, no uninstaller, and no background process. Delete the file to uninstall.
 
 ## Usage
 
@@ -110,40 +90,44 @@ exit status:
   3  the socket table could not be read
 ```
 
-The exit code carries the answer, so a script never has to parse the table:
+Branch on the exit code rather than the text:
 
 ```sh
 which-port "$PORT"
 case $? in
+  0) echo "something is listening on $PORT" ;;
   1) echo "nothing is listening on $PORT" ;;
   2) echo "that is not a port number" ;;
   3) echo "could not read the socket table" ;;
 esac
 ```
 
-> [!NOTE]
-> The Occupancy table goes to standard output and every prose line goes to
-> standard error, so `which-port 8080 > out.txt` gives you a clean table and
-> nothing else.
+The table goes to standard output and the prose goes to standard error, so
+`which-port 8080 > out.txt` gives you the table and nothing else.
 
 ## What it reports
 
-**Only Listening sockets.** A browser with fifty established connections on
-your port does not bury the one row you care about, and a bound UDP socket is
-never confused with a listening one.
+### Only Listening sockets
 
-**One row per socket, not per process.** A single process commonly holds both
-an IPv4 and an IPv6 socket on the same port. You get two rows, and the Local
-address column is the reason: it is how you tell whether the port is reachable
-from outside the machine.
+Established connections and bound UDP sockets never appear. A browser holding
+fifty connections to your port does not bury the row you care about.
 
-**Addresses always in full form.** `0.0.0.0` and `[::]` are printed as
-themselves. Collapsing them to `*` would discard the one fact that makes a
-dual-stack pair interpretable.
+### One row per socket, not per process
 
-**Never a wrong Path.** When the operating system withholds an Occupier's
-metadata from an unprivileged caller, you get the Occupier anyway, by PID and
-socket, with a placeholder where the rest would go:
+A process holding both an IPv4 and an IPv6 socket produces two rows. The Local
+address column tells you whether the port is reachable from outside the machine,
+which is the fact that makes a dual-stack pair readable.
+
+### Addresses in full form
+
+`0.0.0.0` and `[::]` print as themselves. Collapsing them to `*` would discard
+the fact that tells you whether the bind was all interfaces or loopback only.
+
+### A withheld process, not a missing one
+
+An unprivileged caller often cannot read a process's name or path. `which-port`
+reports the Occupier by PID and socket anyway, and prints `-` where the rest
+would go:
 
 ```
 > which-port 135
@@ -152,52 +136,64 @@ ADDRESS      PID   PROCESS  PATH
 [::]:135     1484  -        -
 ```
 
-and the reason on standard error, once per process rather than once per socket:
+The reason goes to standard error, once per process rather than once per socket:
 
 ```
 1484: identity unavailable, could not open the process (access denied, or it has exited)
 ```
 
-This is the common case on Linux for an unprivileged caller, not a corner. A
-blank Path is never an error, and the tool will not ask you to elevate.
+On Linux this is the common case, not an edge case. A blank Path is never an
+error, and the tool never asks you to elevate.
 
-**No escape codes.** Aligned columns with spaces, byte-identical piped and on a
-terminal. Rows are ordered by PID, so two runs of the same query print the same
-table.
+### Plain text, stable order
 
-## Checks
+Columns are aligned with spaces, with no escape codes, so the table is
+byte-identical piped and on a terminal. Rows sort by PID, so two runs of the same
+query print the same table.
+
+## Build from source
+
+```sh
+zig build
+```
+
+The binary lands in `zig-out/bin/`. Build every target a release attaches with:
+
+```sh
+zig build all-targets
+```
+
+Those binaries land in `zig-out/release/`, each named for its target. Requires
+Zig 0.17 and no other dependency.
+
+## Run the checks
 
 ```sh
 pwsh scripts/test-all.ps1
 ```
 
-One command runs every suite this machine can: formatting, the four unit suites,
-a compile of the binary itself, a compile of every shipped target, a live
-round-trip on Windows, the Linux suite cross-compiled and run under WSL, and a
-glossary check that fails the run if the code has drifted from the vocabulary in
-[`CONTEXT.md`](CONTEXT.md).
+The run covers formatting, four unit suites, a compile of the binary, a compile of
+every shipped target, a live round-trip on Windows, the Linux suite cross-compiled
+and run under WSL, and a glossary check against [`CONTEXT.md`](CONTEXT.md).
 
-`zig build test` runs just the four OS-free suites, for when you want the fast
-loop.
+For a faster loop, `zig build test` runs the four OS-free unit suites alone.
 
-To have that gate your commits, arm the hooks once:
+Arm the hooks once to run the checks on every commit and push:
 
 ```sh
 git config core.hooksPath .githooks
 ```
 
-`core.hooksPath` is local git config and does not travel with a clone, which is
-why the command is not optional.
+`core.hooksPath` is local git config, so a fresh clone needs that command before
+the hooks run.
 
-## Layout
+## Repository layout
 
-| Path | What lives there |
+| Path | Contents |
 | --- | --- |
-| `src/lookup.zig` | The one seam, from a port to every Occupier of a Listening socket on it |
-| `src/win.zig`, `src/lin.zig` | One adapter per platform behind that seam |
-| `src/report.zig` | The table's exact bytes, and the notes that explain a `-` |
+| `src/lookup.zig` | The seam: a port to every Occupier of a Listening socket on it |
+| `src/win.zig`, `src/lin.zig` | One adapter per platform behind the seam |
+| `src/report.zig` | The table bytes, and the notes that explain a `-` |
 | `src/parse_proc.zig` | The Linux text parser, tested against a captured kernel table |
-| `docs/adr/` | Why Zig, and why one platform shells out and two do not |
-
-[`CONTEXT.md`](CONTEXT.md) is the glossary: the words this tool uses, and the
-synonyms it has decided against.
+| `CONTEXT.md` | The glossary: the words this tool uses, and the synonyms it rejects |
+| `docs/adr/` | Why Zig, and why one platform would shell out and two do not |
