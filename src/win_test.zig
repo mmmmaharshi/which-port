@@ -90,6 +90,11 @@ test "a bound Listening socket is Occupied by this process" {
     const me = std.os.windows.GetCurrentProcessId();
     const port_suffix = try std.fmt.allocPrint(gpa, ":{d}", .{bound.port});
     defer gpa.free(port_suffix);
+    // The test binary's own name, which the Occupier's Command
+    // line must name for this very process.
+    const self = try std.process.executablePathAlloc(threaded.io(), gpa);
+    defer gpa.free(self);
+    const self_name = std.fs.path.basename(self);
 
     var found = false;
     for (rows) |row| {
@@ -97,6 +102,11 @@ test "a bound Listening socket is Occupied by this process" {
         // We bound loopback, so the address must be loopback and this exact port.
         try std.testing.expect(std.mem.startsWith(u8, row.local_address, "127.0.0.1"));
         try std.testing.expect(std.mem.endsWith(u8, row.local_address, port_suffix));
+        // The Command line of this process must name this very test
+        // binary: null, or a line naming some other program, means
+        // the adapter resolved the wrong thing.
+        try std.testing.expect(row.command_line != null);
+        try std.testing.expect(std.mem.indexOf(u8, row.command_line.?, self_name) != null);
         found = true;
     }
     try std.testing.expect(found);
