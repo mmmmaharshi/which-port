@@ -38,12 +38,26 @@ extern "kernel32" fn QueryFullProcessImageNameW(
 ) i32;
 extern "kernel32" fn CloseHandle(handle: ?*anyopaque) i32;
 
+extern "ntdll" fn NtQueryInformationProcess(
+    process: ?*anyopaque,
+    information_class: u32,
+    information: ?*anyopaque,
+    information_length: u32,
+    return_length: ?*u32,
+) callconv(.winapi) i32;
+
 const AF_INET = 2;
 const AF_INET6 = 23;
 /// TCP_TABLE_OWNER_PID_LISTENER: listeners only, with an owning pid.
 const TCP_TABLE_OWNER_PID_LISTENER = 3;
 const ERROR_INSUFFICIENT_BUFFER = 122;
 const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+/// ProcessCommandLineInformation. Internal to Windows (ADR 0002's
+/// hand-declared pattern), present from Windows 8.1, and readable
+/// with PROCESS_QUERY_LIMITED_INFORMATION -- the right the handle in
+/// `describe` is already opened with.
+const ProcessCommandLineInformation = 60;
+const STATUS_INFO_LENGTH_MISMATCH: i32 = @bitCast(@as(u32, 0xC0000004));
 
 /// Read straight out of the MSVC headers. IPv4 and IPv6 use *different* row
 /// structs, which is easy to get wrong: the IPv6 row leads with a 16-byte
@@ -66,6 +80,15 @@ const Tcp6Row = extern struct {
     dwRemotePort: u32,
     dwState: u32,
     dwOwningPid: u32,
+};
+
+/// The header of a `ProcessCommandLineInformation` answer. The
+/// string it describes is not behind `buffer`: it follows the
+/// header, inline in the same buffer.
+const UnicodeString = extern struct {
+    length: u16,
+    maximum_length: u16,
+    buffer: ?[*]u16,
 };
 
 pub const LookupError = Allocator.Error || error{TableUnavailable};
@@ -159,11 +182,46 @@ fn describe(gpa: Allocator, local_address: []const u8, pid: u32) Allocator.Error
     const path = std.unicode.utf16LeToUtf8Alloc(gpa, wide[0..len]) catch
         return occ.withheld(gpa, local_address, pid, "the image path is not valid text");
     defer gpa.free(path);
-    return occ.named(gpa, local_address, pid, path);
+
+    const command_line = commandLine(gpa, handle);
+    defer if (command_line) |line| gpa.free(line);
+    return occ.named(gpa, local_address, pid, path, command_line);
+}
+
+/// The command line of the process behind `handle`, or null
+/// when the OS withholds it. The class is undocumented and
+/// absent before Windows 8.1, so a refused query leaves the
+/// Occupier named -- a named Occupier with a missing Command
+/// line, not a withheld one. See occupier.named.
+fn commandLine(gpa: Allocator, handle: ?*anyopaque) ?[]const u8 {
+    // Ask for the size first, then fetch: the same two calls
+    // `fetch` makes of `GetExtendedTcpTable`.
+    var needed: u32 = 0;
+    const probe = NtQueryInformationProcess(handle, ProcessCommandLineInformation, null, 0, &needed);
+    if (probe != STATUS_INFO_LENGTH_MISMATCH or needed == 0) return null;
+
+    const buffer = gpa.allocWithOptions(u8, needed, std.mem.Alignment.of(UnicodeString), null) catch return null;
+    defer gpa.free(buffer);
+    if (NtQueryInformationProcess(handle, ProcessCommandLineInformation, buffer.ptr, needed, &needed) != 0) return null;
+
+    // Header first, then the string's own bytes. Length counts
+    // bytes, so a header that overruns the buffer is refused
+    // rather than read past it.
+    const header: *const UnicodeString = @ptrCast(buffer.ptr);
+    if (buffer.len < @sizeOf(UnicodeString) or header.length > buffer.len - @sizeOf(UnicodeString)) return null;
+    const wide = @as([*]const u16, @ptrCast(buffer.ptr + @sizeOf(UnicodeString)))[0 .. header.length / 2];
+    return std.unicode.utf16LeToUtf8Alloc(gpa, wide) catch null;
 }
 
 comptime {
     std.debug.assert(@sizeOf(Tcp4Row) == 24);
     std.debug.assert(@sizeOf(Tcp6Row) == 56);
     std.debug.assert(@offsetOf(Tcp6Row, "dwOwningPid") == 52);
+    // The header is pointer-sized, so its size is 64-bit on a
+    // 64-bit target: asserted relative to the target, not as a
+    // number that holds on only one of them.
+    std.debug.assert(@offsetOf(UnicodeString, "length") == 0);
+    std.debug.assert(@offsetOf(UnicodeString, "maximum_length") == 2);
+    std.debug.assert(@offsetOf(UnicodeString, "buffer") == @sizeOf(usize));
+    std.debug.assert(@sizeOf(UnicodeString) == @sizeOf(usize) * 2);
 }
