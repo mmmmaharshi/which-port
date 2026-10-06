@@ -3,7 +3,7 @@
 # it somewhere on your PATH.
 #
 #   pwsh scripts/install.ps1
-#   pwsh scripts/install.ps1 -Version v0.1.1
+#   pwsh scripts/install.ps1 -Version v0.1.2
 #   pwsh scripts/install.ps1 -Dir C:\tools        # skip the PATH change
 #
 # Four steps, each announced before it happens, so a run that hangs tells you
