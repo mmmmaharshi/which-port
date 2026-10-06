@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## Standards
+
+While writing code, follow [`CODING_STANDARDS.md`](CODING_STANDARDS.md).
+
 ## Skills
 
 `.agents/skills/`, pinned by `skills-lock.json` and restored by running
