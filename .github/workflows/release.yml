@@ -165,12 +165,12 @@ jobs:
           case "$VERSION" in
             *-rc*|*-beta*|*-alpha*) prerelease="--prerelease" ;;
           esac
-          # Create the tag only if it is missing. The push trigger means it
-          # almost always exists already, and `git tag` on an existing tag exits
-          # 128 and takes the whole release with it -- which is what the first
-          # run of this workflow did. The manual path has no tag yet, so both
-          # cases have to work.
-          if ! git rev-parse "$VERSION" >/dev/null 2>&1; then
+          # Create the tag only if the remote does not already have it. Asked of
+          # the remote rather than of the local clone, because actions/checkout
+          # fetches one commit and no tags: `git rev-parse` reports a pushed tag
+          # as missing, the push is rejected, and the release dies at the last
+          # step. ls-remote answers from the remote, so depth does not matter.
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
             git tag "$VERSION"
             git push origin "$VERSION"
           fi
