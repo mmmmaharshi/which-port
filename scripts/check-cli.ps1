@@ -78,7 +78,7 @@ try {
     Assert-Run 'exit 2, unknown option' 2 '' 'unknown option' @('--bogus')
     Assert-Run 'exit 2, too many arguments' 2 '' 'expected one port' @('80', '81')
     # The contract a script depends on: data on stdout, prose on stderr.
-    Assert-Run 'exit 0, Occupancy table on stdout, no prose' 0 'ADDRESS\s+PID\s+PROCESS\s+PATH' '' @("$busy")
+    Assert-Run 'exit 0, Occupancy table on stdout, no prose' 0 'ADDRESS\s+PID\s+PROCESS\s+PATH\s+COMMAND' '' @("$busy")
 }
 finally {
     $listener.Stop()
