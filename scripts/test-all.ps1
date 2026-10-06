@@ -126,6 +126,10 @@ Invoke-Step 'format + parser tests' {
     zig test src/addr.zig
     zig test src/parse_proc.zig
     zig test src/report.zig
+    # Named rather than reached through lookup.zig, which reports zero tests:
+    # Zig registers a file's tests only when something forces it to be analysed,
+    # and lookup refers to all of occupier from inside function bodies.
+    zig test src/occupier.zig
     zig test src/lookup.zig
 }
 

@@ -6,7 +6,7 @@
 //!
 //!   zig build                  the binary for this machine
 //!   zig build all-targets      every shipped target, into zig-out/release/
-//!   zig build test             the four unit suites for this machine
+//!   zig build test             the five unit suites for this machine
 //!
 //! Deliberately absent: a `test` target that runs the live round-trips. Those
 //! need a real kernel on the machine being tested and a different invocation per
@@ -96,12 +96,19 @@ pub fn build(b: *std.Build) void {
         all_step.dependOn(&install.step);
     }
 
-    // The four unit suites. They are OS-free by construction -- the parsers take
+    // The five unit suites. They are OS-free by construction -- the parsers take
     // captured text and addr takes bytes -- so they run anywhere, which is the
     // point of keeping them separate from the live round-trips.
+    //
+    // occupier is listed in its own right rather than relied on through lookup.
+    // Zig registers a file's tests only when something forces it to be analysed,
+    // and lookup.zig refers to every part of occupier.zig from inside function
+    // bodies, so `zig test src/lookup.zig` reports zero tests and the Occupier
+    // contract would go unverified. The same laziness is what lets the macOS
+    // @compileError stay out of the way; it cuts both ways.
     const test_step = b.step("test", "Run the OS-free unit suites");
 
-    for ([_][]const u8{ "addr", "parse_proc", "report", "lookup" }) |suite| {
+    for ([_][]const u8{ "addr", "parse_proc", "report", "occupier", "lookup" }) |suite| {
         const tests = b.addTest(.{
             .name = b.fmt("{s}-test", .{suite}),
             .root_module = b.createModule(.{

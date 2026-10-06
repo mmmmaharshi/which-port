@@ -6,7 +6,15 @@
 //! deliberately do not want a Windows SDK dependency. See ADR 0002.
 
 const std = @import("std");
-const Occupier = @import("lookup.zig").Occupier;
+
+// The Occupier contract, with no platform in it. This is the only import of it
+// the adapter needs: the vocabulary and the two constructors both arrive here.
+const occ = @import("occupier.zig");
+const Occupier = occ.Occupier;
+
+// Local addresses are formatted by the shared module so Windows, Linux and
+// macOS print byte-identical output. See CONTEXT.md: Local address.
+const addr = @import("addr.zig");
 
 const Allocator = std.mem.Allocator;
 
@@ -104,16 +112,6 @@ fn portOf(raw: u32) u16 {
     return @byteSwap(@as(u16, @truncate(raw)));
 }
 
-// --- the seam's shared vocabulary ---------------------------------------------
-
-// Local addresses are formatted by the shared module so Windows, Linux and
-// macOS print byte-identical output. See CONTEXT.md: Local address.
-const addr = @import("addr.zig");
-
-// `withheld` and `lessThan` live beside Occupier so withholding metadata and
-// row order are one contract, not one copy per platform.
-const which = @import("lookup.zig");
-
 // --- collectors --------------------------------------------------------------
 
 fn collect4(gpa: Allocator, out: *std.ArrayList(Occupier), port: u16) LookupError!void {
@@ -148,20 +146,20 @@ fn collect6(gpa: Allocator, out: *std.ArrayList(Occupier), port: u16) LookupErro
 fn describe(gpa: Allocator, local_address: []const u8, pid: u32) Allocator.Error!Occupier {
     const handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
     if (handle == null) {
-        return which.withheld(gpa, local_address, pid, "could not open the process (access denied, or it has exited)");
+        return occ.withheld(gpa, local_address, pid, "could not open the process (access denied, or it has exited)");
     }
     defer _ = CloseHandle(handle);
 
     var wide: [4096]u16 = undefined;
     var len: u32 = @intCast(wide.len);
     if (QueryFullProcessImageNameW(handle, 0, &wide, &len) == 0) {
-        return which.withheld(gpa, local_address, pid, "could not read the image path (access denied, or it has exited)");
+        return occ.withheld(gpa, local_address, pid, "could not read the image path (access denied, or it has exited)");
     }
 
     const path = std.unicode.utf16LeToUtf8Alloc(gpa, wide[0..len]) catch
-        return which.withheld(gpa, local_address, pid, "the image path is not valid text");
+        return occ.withheld(gpa, local_address, pid, "the image path is not valid text");
     defer gpa.free(path);
-    return which.named(gpa, local_address, pid, path);
+    return occ.named(gpa, local_address, pid, path);
 }
 
 comptime {

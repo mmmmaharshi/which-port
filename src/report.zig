@@ -6,8 +6,8 @@
 
 const std = @import("std");
 const testing = std.testing;
-const which = @import("lookup.zig");
-const Occupier = which.Occupier;
+const occ = @import("occupier.zig");
+const Occupier = occ.Occupier;
 const Allocator = std.mem.Allocator;
 
 /// `ADDRESS PID PROCESS PATH`, one row per socket, columns aligned with spaces.
@@ -45,12 +45,12 @@ pub fn table(gpa: Allocator, occupiers: []const Occupier) ![]u8 {
 /// An unknown pid is shown as the same placeholder as an unknown path, for the
 /// same reason: the OS withheld it, which is not an error. See CONTEXT.md.
 fn pidCell(buf: []u8, pid: ?u32) ![]const u8 {
-    const p = pid orelse return which.unresolved;
+    const p = pid orelse return occ.unresolved;
     return std.fmt.bufPrint(buf, "{d}", .{p});
 }
 
 fn pathCell(o: Occupier) []const u8 {
-    return o.path orelse which.unresolved;
+    return o.path orelse occ.unresolved;
 }
 
 /// One line per Occupier whose identity the OS withheld, deduped by pid, each
@@ -127,7 +127,7 @@ test "a withheld pid and path both render as the placeholder" {
     const rows = [_]Occupier{.{
         .pid = null,
         .local_address = "0.0.0.0:8080",
-        .process_name = which.unresolved,
+        .process_name = occ.unresolved,
         .path = null,
         .identity_note = "the holding process could not be identified",
     }};

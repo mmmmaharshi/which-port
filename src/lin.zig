@@ -10,10 +10,10 @@ const std = @import("std");
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
 
-const which = @import("lookup.zig");
+const occ = @import("occupier.zig");
 const parse = @import("parse_proc.zig");
 const addr = @import("addr.zig");
-const Occupier = which.Occupier;
+const Occupier = occ.Occupier;
 
 /// Read a procfs file into memory.
 ///
@@ -88,7 +88,7 @@ pub fn lookup(io: Io, gpa: Allocator, port: u16) LookupError![]Occupier {
         // the process is unknown. Calling it Free would be a lie. See CONTEXT.md.
         const pid = pids.get(s.inode);
         if (pid == null) {
-            try out.append(gpa, try which.withheld(gpa, local, null, "the holding process could not be identified (access denied, or it has exited)"));
+            try out.append(gpa, try occ.withheld(gpa, local, null, "the holding process could not be identified (access denied, or it has exited)"));
             continue;
         }
         try out.append(gpa, try describe(io, gpa, &root, local, pid.?));
@@ -148,12 +148,12 @@ fn attribute(
 fn describe(io: Io, gpa: Allocator, root: *Io.Dir, local_address: []const u8, pid: u32) LookupError!Occupier {
     var path_buf: [64]u8 = undefined;
     const exe_path = std.fmt.bufPrint(&path_buf, "{d}/exe", .{pid}) catch
-        return which.withheld(gpa, local_address, pid, "the Occupier exited before it could be described");
+        return occ.withheld(gpa, local_address, pid, "the Occupier exited before it could be described");
 
     var link_buf: [4096]u8 = undefined;
     const n = root.readLink(io, exe_path, &link_buf) catch
-        return which.withheld(gpa, local_address, pid, "could not read the image path (access denied, or it has exited)");
+        return occ.withheld(gpa, local_address, pid, "could not read the image path (access denied, or it has exited)");
 
     const path = link_buf[0..n];
-    return which.named(gpa, local_address, pid, path);
+    return occ.named(gpa, local_address, pid, path);
 }
