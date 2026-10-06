@@ -128,11 +128,18 @@ test "named derives the process name from the path's basename" {
 // adapter produced the rows. A dual-stack pair is one process, so the two rows
 // are separated by address alone and the IPv4 one lands first.
 //
-// This passed on the first run: lessThan already existed and already behaved
-// this way, so this is characterisation of untested code, not a red-green cycle.
+// Asserts the order the rows end up in rather than the comparator's return
+// value. Asserting lessThan directly would restate its own definition and pass
+// for any comparison that happens to be consistent; the table's row order is the
+// thing a reader sees. The rows start in the wrong order, so a comparator that
+// did nothing would fail this.
 test "a dual-stack pair sorts IPv4 first" {
-    const v4 = Occupier{ .pid = 53, .local_address = "0.0.0.0:53", .process_name = "x", .path = null, .identity_note = "" };
-    const v6 = Occupier{ .pid = 53, .local_address = "[::]:53", .process_name = "x", .path = null, .identity_note = "" };
-    try testing.expect(lessThan({}, v4, v6));
-    try testing.expect(!lessThan({}, v6, v4));
+    var rows = [_]Occupier{
+        .{ .pid = 53, .local_address = "[::]:53", .process_name = "x", .path = null, .identity_note = "" },
+        .{ .pid = 53, .local_address = "0.0.0.0:53", .process_name = "x", .path = null, .identity_note = "" },
+    };
+    std.mem.sort(Occupier, &rows, {}, lessThan);
+
+    try testing.expectEqualStrings("0.0.0.0:53", rows[0].local_address);
+    try testing.expectEqualStrings("[::]:53", rows[1].local_address);
 }

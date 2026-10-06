@@ -48,11 +48,7 @@ pub fn build(b: *std.Build) void {
     // should not be copying a debug build. ADR 0001 measured this at roughly
     // 490 KB stripped. Zig 0.17 renamed the CLI's ReleaseSmall to `small`; both
     // spellings reach the same enum member and produce byte-identical binaries.
-    const release = b.option(
-        std.builtin.Optimize,
-        "release",
-        "Optimisation mode for the shipped binaries (default: small)",
-    ) orelse .small;
+    const release: std.builtin.Optimize = .small;
 
     const exe = b.addExecutable(.{
         .name = "which-port",
@@ -81,7 +77,7 @@ pub fn build(b: *std.Build) void {
     const all_step = b.step("all-targets", "Build every shipped target into zig-out/release/");
 
     for (release_targets) |t| {
-        if (!(b.option(bool, t.name, "Build this target") orelse t.buildable)) continue;
+        if (!t.buildable) continue;
 
         const cross = b.addExecutable(.{
             .name = b.fmt("which-port-{s}", .{t.name}),

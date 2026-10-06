@@ -4,7 +4,6 @@
 //! contract that lets `which-port 8080 > out.txt` capture data and never prose.
 
 const std = @import("std");
-const builtin = @import("builtin");
 const which = @import("lookup.zig");
 const report = @import("report.zig");
 

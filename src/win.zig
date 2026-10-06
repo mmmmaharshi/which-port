@@ -6,7 +6,6 @@
 //! deliberately do not want a Windows SDK dependency. See ADR 0002.
 
 const std = @import("std");
-const builtin = @import("builtin");
 const Occupier = @import("lookup.zig").Occupier;
 
 const Allocator = std.mem.Allocator;
