@@ -60,9 +60,9 @@ jobs:
   #
   # macOS produces no binaries yet. src/lookup.zig is a compile error on .macos
   # because the lsof lookup does not exist, so `zig build all-targets` skips those
-  # two targets and the suites here are the three that take no platform at all.
-  # When the lookup lands, drop .buildable = false from those two entries in
-  # build.zig and this job picks up both macOS binaries on the next release.
+  # two targets and one suite skips itself, both with the reason printed. When the
+  # lookup lands, drop .buildable = false from those two entries in build.zig and
+  # this job picks up both macOS binaries on the next release.
   macos:
     runs-on: macos-latest
     steps:
@@ -77,19 +77,18 @@ jobs:
           tar -xJf zig.tar.xz
           echo "$PWD/zig-aarch64-macos-0.17.0" >> "$GITHUB_PATH"
 
-      # Named by hand rather than through scripts/test-all.ps1, because that
-      # script skips the whole presentation layer on macOS: report.zig imports
-      # lookup.zig for Occupier and unresolved, and lookup.zig picks its platform
-      # at module scope. When the lsof lookup lands, that coupling goes with it
-      # and this job can call the script like the others.
-      - name: Unit suites that take no platform
-        run: |
-          zig test src/addr.zig
-          zig test src/parse_proc.zig
-          zig test src/report.zig
-
-      - name: Every buildable target still cross-compiles from macOS
-        run: zig build all-targets
+      # The same command the other two jobs run. This used to name three suites
+      # by hand because scripts/test-all.ps1 skipped them on macOS -- on a belief
+      # about the compiler that turned out to be wrong. lookup.zig does pick its
+      # implementation at module scope, but Zig analyses that only when something
+      # refers to it, and these suites never do.
+      #
+      # macOS still skips one thing, and says so: main.zig calls lookup(), which
+      # is the one path that forces the switch. `zig build all-targets` inside
+      # the script still proves every shipped target compiles from here.
+      - name: Checks
+        shell: pwsh
+        run: ./scripts/test-all.ps1
 
   release:
     # Skipped, not failed, unless this run is actually a release. A push to master

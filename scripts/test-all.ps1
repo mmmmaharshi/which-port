@@ -77,10 +77,20 @@ Invoke-Step 'formatting' {
 # main.zig is reached by no test file, so nothing below compiles it. Without
 # this a change that broke argument parsing, the table layout or an exit code
 # would leave every suite green.
-Invoke-Step 'the binary compiles' {
-    $out = Join-Path $tmp 'which-port-buildcheck.bin'
-    zig build-exe src/main.zig "-femit-bin=$out"
-    Remove-Item $out -ErrorAction SilentlyContinue
+#
+# Not on macOS. main.zig calls lookup(), which forces the platform switch in
+# lookup.zig, which is a compile error there until the lsof lookup lands. That
+# is the one thing on macOS that cannot be checked, and `zig build all-targets`
+# below still proves every shipped target compiles.
+if ($onMacos) {
+    Skip-Step 'the binary compiles' 'main.zig calls lookup(), which is a compile error on macOS until the lsof lookup lands'
+}
+else {
+    Invoke-Step 'the binary compiles' {
+        $out = Join-Path $tmp 'which-port-buildcheck.bin'
+        zig build-exe src/main.zig "-femit-bin=$out"
+        Remove-Item $out -ErrorAction SilentlyContinue
+    }
 }
 
 # The release build, built every run. It is slow only in the sense that it
@@ -97,21 +107,26 @@ Invoke-Step 'glossary vocabulary' {
 
 # --- the seam and the suites behind it ---------------------------------------
 #
-# report.zig imports lookup.zig for Occupier and unresolved, and lookup.zig
-# picks its platform implementation at module scope. So on macOS the whole
-# presentation layer is unreachable until the lsof lookup lands -- not just the
-# macOS-specific part of it. Stated here rather than left as a red build on
-# someone else's machine.
-if ($onMacos) {
-    Skip-Step 'format + parser tests' 'lookup.zig selects its platform at module scope and macOS is @compileError until the lsof ticket lands'
-}
-else {
-    Invoke-Step 'format + parser tests' {
-        zig test src/addr.zig
-        zig test src/parse_proc.zig
-        zig test src/report.zig
-        zig test src/lookup.zig
-    }
+# These four run on all three platforms, macOS included, and that surprised me
+# enough to be worth checking rather than assuming. lookup.zig does select its
+# implementation at module scope:
+#
+#     const impl = switch (builtin.os.tag) { ... .macos => @compileError(...) };
+#
+# but Zig analyses a container-level declaration only when something refers to
+# it. Occupier, unresolved and lessThan never touch impl, so report.zig compiles
+# and passes on macOS today. Only lookup() and LookupError force the switch, and
+# only main.zig calls those.
+#
+# So the earlier version of this file was wrong to skip these on macOS, and the
+# macOS job was wrong to name them by hand. An unverified belief about what the
+# compiler does is the same defect as the WSL path bug this file was written to
+# catch: something skipped, quietly, for a reason nobody had tested.
+Invoke-Step 'format + parser tests' {
+    zig test src/addr.zig
+    zig test src/parse_proc.zig
+    zig test src/report.zig
+    zig test src/lookup.zig
 }
 
 # The live round-trip from the spec: bind a Listening socket, look it up, assert
