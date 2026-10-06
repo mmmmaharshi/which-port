@@ -155,5 +155,8 @@ fn describe(io: Io, gpa: Allocator, root: *Io.Dir, local_address: []const u8, pi
         return occ.withheld(gpa, local_address, pid, "could not read the image path (access denied, or it has exited)");
 
     const path = link_buf[0..n];
-    return occ.named(gpa, local_address, pid, path);
+    // The Command line is null until the adapter resolves it: a named
+    // Occupier with a missing Command line is not a withheld one. See
+    // occupier.named.
+    return occ.named(gpa, local_address, pid, path, null);
 }

@@ -159,7 +159,10 @@ fn describe(gpa: Allocator, local_address: []const u8, pid: u32) Allocator.Error
     const path = std.unicode.utf16LeToUtf8Alloc(gpa, wide[0..len]) catch
         return occ.withheld(gpa, local_address, pid, "the image path is not valid text");
     defer gpa.free(path);
-    return occ.named(gpa, local_address, pid, path);
+    // The Command line is null until the adapter resolves it: a named
+    // Occupier with a missing Command line is not a withheld one. See
+    // occupier.named.
+    return occ.named(gpa, local_address, pid, path, null);
 }
 
 comptime {
