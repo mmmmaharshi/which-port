@@ -117,11 +117,11 @@ fn portOf(raw: u32) u16 {
 fn collect4(gpa: Allocator, out: *std.ArrayList(Occupier), port: u16) LookupError!void {
     const rows = try fetch(gpa, AF_INET, Tcp4Row);
     defer gpa.free(rows);
-    var buf: [64]u8 = undefined;
+    var buf: [addr.maxLen]u8 = undefined;
     for (rows) |row| {
         if (portOf(row.dwLocalPort) != port) continue;
-        // A 64-byte buffer against a 46-byte worst case (`[xxxx:...:xxxx]:65535`),
-        // so the address always fits and the error is unreachable by construction.
+        // Sized from addr.maxLen, so a wrong bound is a compile error here rather
+        // than an unreachable branch that depends on the arithmetic.
         const local = addr.addr4(&buf, row.dwLocalAddr, port) catch unreachable;
         try out.append(gpa, try describe(gpa, local, row.dwOwningPid));
     }
@@ -130,7 +130,7 @@ fn collect4(gpa: Allocator, out: *std.ArrayList(Occupier), port: u16) LookupErro
 fn collect6(gpa: Allocator, out: *std.ArrayList(Occupier), port: u16) LookupError!void {
     const rows = try fetch(gpa, AF_INET6, Tcp6Row);
     defer gpa.free(rows);
-    var buf: [64]u8 = undefined;
+    var buf: [addr.maxLen]u8 = undefined;
     for (rows) |row| {
         if (portOf(row.dwLocalPort) != port) continue;
         const local = addr.addr6(&buf, row.ucLocalAddr, port) catch unreachable;

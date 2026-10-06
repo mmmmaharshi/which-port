@@ -11,8 +11,19 @@ const std = @import("std");
 
 const IpAddress = std.Io.net.IpAddress;
 
-/// 46 bytes is the longest possible Local address, `[xxxx:...:xxxx]:65535`.
-const Longest = 46;
+/// The longest possible Local address: `[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535`,
+/// which is 47 bytes -- one bracket, 32 hex digits, 7 inner colons, one closing
+/// bracket, one colon, and a five-digit port.
+///
+/// Public so a caller can size its buffer from the module that owns the bound
+/// rather than hardcode a number and trust a comment. `var buf: [addr.maxLen]u8`
+/// makes a too-small buffer a compile error here, instead of an unreachable
+/// error branch at the call site that silently depends on the arithmetic being
+/// right in three different files.
+///
+/// This said 46 until the test below computed the real figure. The callers all
+/// used 64, so the wrong bound had never mattered.
+pub const maxLen = 47;
 
 /// A 4-byte address as `/proc` and the Windows table each hand it over: a 32-bit
 /// word in network byte order, so the first octet is the *last* byte here.
@@ -27,7 +38,7 @@ pub fn addr6(buf: []u8, raw: [16]u8, port: u16) ![]u8 {
 }
 
 fn writeIp(buf: []u8, ip: IpAddress) ![]u8 {
-    if (buf.len < Longest) return error.NoSpaceLeft;
+    if (buf.len < maxLen) return error.NoSpaceLeft;
     var w = std.Io.Writer.fixed(buf);
     try ip.format(&w);
     return w.buffered();
@@ -36,14 +47,14 @@ fn writeIp(buf: []u8, ip: IpAddress) ![]u8 {
 const testing = std.testing;
 
 test "IPv4 always prints in full form, never a wildcard" {
-    var buf: [Longest]u8 = undefined;
+    var buf: [maxLen]u8 = undefined;
     // 0.0.0.0, which a wildcard-collapsing tool would print as `*`.
     try testing.expectEqualStrings("0.0.0.0:8080", try addr4(&buf, 0x00000000, 8080));
     try testing.expectEqualStrings("127.0.0.1:35765", try addr4(&buf, 0x0100007F, 35765));
 }
 
 test "IPv6 brackets the address and compresses only runs of two or more" {
-    var buf: [Longest]u8 = undefined;
+    var buf: [maxLen]u8 = undefined;
     try testing.expectEqualStrings("[::]:8080", try addr6(&buf, @splat(0), 8080));
 
     var loopback: [16]u8 = @splat(0);
@@ -61,7 +72,7 @@ test "IPv6 brackets the address and compresses only runs of two or more" {
 }
 
 test "a run of one zero group is left alone" {
-    var buf: [Longest]u8 = undefined;
+    var buf: [maxLen]u8 = undefined;
     // 2001:0:db8:1:1:1:1:1 — group 1 is zero and nothing follows it, so there is
     // no run to compress and the zero has to survive.
     const raw = [16]u8{
@@ -75,4 +86,19 @@ test "a run of one zero group is left alone" {
         0x00, 0x01, // 1
     };
     try testing.expectEqualStrings("[2001:0:db8:1:1:1:1:1]:443", try addr6(&buf, raw, 443));
+}
+
+// maxLen is what every caller sizes its buffer from, and a caller that sizes it
+// one byte short gets an error it cannot see coming. So the bound is checked
+// against the longest address that can actually be produced: every group
+// non-zero, so nothing compresses, at the highest port.
+test "maxLen holds the longest address that needs no compression" {
+    var buf: [maxLen]u8 = undefined;
+    const raw = [16]u8{
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    };
+    const out = try addr6(&buf, raw, 65535);
+    try testing.expectEqualStrings("[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535", out);
+    try testing.expectEqual(maxLen, out.len);
 }

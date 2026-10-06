@@ -76,7 +76,7 @@ pub fn lookup(io: Io, gpa: Allocator, port: u16) LookupError![]Occupier {
 
     var out: std.ArrayList(Occupier) = .empty;
     errdefer out.deinit(gpa);
-    var buf: [64]u8 = undefined;
+    var buf: [addr.maxLen]u8 = undefined;
     for (matches.items) |s| {
         const local = if (s.family6)
             addr.addr6(&buf, s.raw6, s.port) catch unreachable
