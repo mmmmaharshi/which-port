@@ -174,13 +174,13 @@ fn describe(io: Io, gpa: Allocator, root: *Io.Dir, local_address: []const u8, pi
 /// vector, NUL-terminated: one NUL between arguments, one
 /// after the last. The separators become spaces and the
 /// trailing NUL is dropped, so the line ends with the last
-/// argument and nothing else is added — the same rendering
-/// Windows reports, which is what keeps the command line
-/// byte-identical across the two platforms. A read that
-/// fails (the process exited, or hidepid is in force) and
-/// an empty file (a kernel thread) both mean null, and
-/// neither is an error: the socket is Occupied either way.
-/// See CONTEXT.md, "Command line".
+/// argument and nothing else is added — the arguments as
+/// one line, the same shape Windows reports, though not
+/// always the same bytes. A read that fails (the process
+/// exited, or hidepid is in force) and an empty file (a
+/// kernel thread) both mean null, and neither is an error:
+/// the socket is Occupied either way. See CONTEXT.md,
+/// "Command line".
 fn readCommandLine(io: Io, gpa: Allocator, root: *Io.Dir, pid: u32) LookupError!?[]u8 {
     var path_buf: [64]u8 = undefined;
     // The kernel's file name for this is a word the glossary
