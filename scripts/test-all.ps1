@@ -104,7 +104,6 @@ Invoke-Step 'glossary vocabulary' {
 # someone else's machine.
 if ($onMacos) {
     Skip-Step 'format + parser tests' 'lookup.zig selects its platform at module scope and macOS is @compileError until the lsof ticket lands'
-    Skip-Step 'windows live round-trip' 'ws2_32 links only on Windows'
 }
 else {
     Invoke-Step 'format + parser tests' {
@@ -121,6 +120,9 @@ if ($onWindows) {
     Invoke-Step 'windows live round-trip' {
         zig test src/win_test.zig
     }
+}
+else {
+    Skip-Step 'windows live round-trip' 'ws2_32 links only on Windows'
 }
 
 # --- linux: run natively where Linux, cross-compile into WSL where Windows ----
