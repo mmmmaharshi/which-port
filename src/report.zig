@@ -62,13 +62,14 @@ fn commandCell(o: Occupier) []const u8 {
     return o.command_line orelse occ.unresolved;
 }
 
-/// One line per Occupier whose identity the OS withheld, deduped by pid, each
-/// already newline-terminated so the caller only has to write it.
+/// One line per Occupier whose identity or Command line the OS
+/// withheld, deduped by pid, each already newline-terminated so the
+/// caller only has to write it.
 ///
 /// Withholding is a permission boundary, not a failure, so this never returns
 /// an error for its own sake: an empty result simply means every Occupier was
 /// named in full.
-pub fn identityNotes(gpa: Allocator, occupiers: []const Occupier) ![]const []const u8 {
+pub fn notes(gpa: Allocator, occupiers: []const Occupier) ![]const []const u8 {
     var lines: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (lines.items) |n| gpa.free(n);
@@ -79,13 +80,23 @@ pub fn identityNotes(gpa: Allocator, occupiers: []const Occupier) ![]const []con
     var scratch: [16]u8 = undefined;
 
     for (occupiers) |o| {
-        if (o.identity_note.len == 0) continue;
         if (std.mem.indexOfScalar(?u32, noted.items, o.pid) != null) continue;
-        try noted.append(gpa, o.pid);
-        try lines.append(gpa, try std.fmt.allocPrint(gpa, "{s}: identity unavailable, {s}\n", .{
-            try pidCell(&scratch, o.pid),
-            o.identity_note,
-        }));
+        // One note per pid, and the identity note wins when an Occupier
+        // carries both, which only a hand-built literal can: it is the
+        // one that explains the whole row.
+        if (o.identity_note.len != 0) {
+            try noted.append(gpa, o.pid);
+            try lines.append(gpa, try std.fmt.allocPrint(gpa, "{s}: identity unavailable, {s}\n", .{
+                try pidCell(&scratch, o.pid),
+                o.identity_note,
+            }));
+        } else if (o.command_note.len != 0) {
+            try noted.append(gpa, o.pid);
+            try lines.append(gpa, try std.fmt.allocPrint(gpa, "{s}: command line unavailable, {s}\n", .{
+                try pidCell(&scratch, o.pid),
+                o.command_note,
+            }));
+        }
     }
     return lines.toOwnedSlice(gpa);
 }
@@ -118,6 +129,7 @@ test "one Occupier renders the header and one aligned row" {
         .path = "C:\\node.exe",
         .command_line = "node server.js",
         .identity_note = "",
+        .command_note = "",
     }};
 
     const out = try table(gpa, &rows);
@@ -142,6 +154,7 @@ test "a withheld pid and path both render as the placeholder" {
         .path = null,
         .command_line = null,
         .identity_note = "the holding process could not be identified",
+        .command_note = "",
     }};
 
     const out = try table(gpa, &rows);
@@ -167,6 +180,7 @@ test "a named Occupier with a withheld command line renders the placeholder" {
         .path = "C:\\python\\python.exe",
         .command_line = null,
         .identity_note = "",
+        .command_note = "",
     }};
 
     const out = try table(gpa, &rows);
@@ -192,6 +206,7 @@ test "a dual-stack pair with one withheld identity yields one note" {
             .process_name = "systemd",
             .path = null,
             .command_line = null,
+            .command_note = "",
             .identity_note = note,
         },
         .{
@@ -200,16 +215,43 @@ test "a dual-stack pair with one withheld identity yields one note" {
             .process_name = "systemd",
             .path = null,
             .command_line = null,
+            .command_note = "",
             .identity_note = note,
         },
     };
 
-    const notes = try identityNotes(gpa, &rows);
+    const lines = try notes(gpa, &rows);
     defer {
-        for (notes) |n| gpa.free(n);
-        gpa.free(notes);
+        for (lines) |n| gpa.free(n);
+        gpa.free(lines);
     }
 
-    try testing.expectEqual(@as(usize, 1), notes.len);
-    try testing.expectEqualStrings("53: identity unavailable, " ++ note ++ "\n", notes[0]);
+    try testing.expectEqual(@as(usize, 1), lines.len);
+    try testing.expectEqualStrings("53: identity unavailable, " ++ note ++ "\n", lines[0]);
+}
+
+// A named Occupier can be missing only its Command line: the row stands
+// and the note says why the `-` in COMMAND is there. The expected line
+// is written whole rather than built from the same parts as the
+// renderer, so a change to either side fails here.
+test "a named occupier with a withheld command line yields one note" {
+    const gpa = testing.allocator;
+    const rows = [_]Occupier{.{
+        .pid = 4242,
+        .local_address = "0.0.0.0:3000",
+        .process_name = "node.exe",
+        .path = "C:\\node.exe",
+        .command_line = null,
+        .identity_note = "",
+        .command_note = "could not read the command line (access denied, or it has exited)",
+    }};
+
+    const lines = try notes(gpa, &rows);
+    defer {
+        for (lines) |n| gpa.free(n);
+        gpa.free(lines);
+    }
+
+    try testing.expectEqual(@as(usize, 1), lines.len);
+    try testing.expectEqualStrings("4242: command line unavailable, could not read the command line (access denied, or it has exited)\n", lines[0]);
 }

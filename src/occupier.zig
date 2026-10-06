@@ -33,6 +33,8 @@ pub const Occupier = struct {
     /// image on disk, this is what the caller passed, and a process that rewrites
     /// its own argument vector makes the two disagree. See CONTEXT.md.
     command_line: ?[]const u8,
+    /// Why the Command line is missing. Empty when it is known.
+    command_note: []const u8,
     /// Why the process or path is unknown. Empty when both are known.
     identity_note: []const u8,
 };
@@ -49,7 +51,8 @@ pub const unresolved = "-";
 ///
 /// The Command line is null here rather than guessed: an Occupier whose process
 /// the OS would not name has no command line to report either, and reporting
-/// something would be inventing an identity. See CONTEXT.md.
+/// something would be inventing an identity. `command_note` is empty here too:
+/// `identity_note` already explains every `-` in the row. See CONTEXT.md.
 pub fn withheld(
     gpa: std.mem.Allocator,
     local_address: []const u8,
@@ -62,6 +65,7 @@ pub fn withheld(
         .process_name = unresolved,
         .path = null,
         .command_line = null,
+        .command_note = "",
         .identity_note = note,
     };
 }
@@ -76,13 +80,17 @@ pub fn withheld(
 /// `command_line` is optional for a reason the adapters cannot hide: Windows and
 /// Linux disagree about which processes will give it up. An adapter that resolved
 /// the Path but not the Command line passes null and still calls this, because a
-/// named Occupier with a missing Command line is not a withheld Occupier.
+/// named Occupier with a missing Command line is not a withheld Occupier — but
+/// the reason its Command line is missing belongs in `command_note`, because a
+/// Command line the OS withheld is metadata withheld: an occupier whose metadata
+/// the OS refused. See CONTEXT.md, "Withheld identity".
 pub fn named(
     gpa: std.mem.Allocator,
     local_address: []const u8,
     pid: u32,
     path: []const u8,
     command_line: ?[]const u8,
+    command_note: []const u8,
 ) std.mem.Allocator.Error!Occupier {
     return .{
         .pid = pid,
@@ -90,6 +98,7 @@ pub fn named(
         .process_name = try gpa.dupe(u8, std.fs.path.basename(path)),
         .path = try gpa.dupe(u8, path),
         .command_line = if (command_line) |c| try gpa.dupe(u8, c) else null,
+        .command_note = try gpa.dupe(u8, command_note),
         .identity_note = "",
     };
 }
@@ -113,7 +122,7 @@ test "named derives the process name from the path's basename" {
     if (@import("builtin").os.tag != .windows) return error.SkipZigTest;
 
     const gpa = testing.allocator;
-    const o = try named(gpa, "0.0.0.0:53", 53, "C:\\Program Files\\nodejs\\node.exe", "node server.js --port 53");
+    const o = try named(gpa, "0.0.0.0:53", 53, "C:\\Program Files\\nodejs\\node.exe", "node server.js --port 53", "");
     defer gpa.free(o.local_address);
     defer gpa.free(o.process_name);
     defer gpa.free(o.path.?);
@@ -124,6 +133,7 @@ test "named derives the process name from the path's basename" {
     try testing.expectEqualStrings("C:\\Program Files\\nodejs\\node.exe", o.path.?);
     try testing.expectEqualStrings("node server.js --port 53", o.command_line.?);
     try testing.expectEqualStrings("", o.identity_note);
+    try testing.expectEqualStrings("", o.command_note);
 }
 
 // The Command line is optional to `named` on purpose: an adapter can resolve the
@@ -133,11 +143,13 @@ test "named derives the process name from the path's basename" {
 test "a named Occupier can have no Command line, and withheld has none at all" {
     const gpa = testing.allocator;
 
-    const without = try named(gpa, "0.0.0.0:80", 80, "/usr/bin/nginx", null);
+    const without = try named(gpa, "0.0.0.0:80", 80, "/usr/bin/nginx", null, "could not read the command line (access denied, or it has exited)");
     defer gpa.free(without.local_address);
     defer gpa.free(without.process_name);
     defer gpa.free(without.path.?);
+    defer gpa.free(without.command_note);
     try testing.expectEqual(@as(?[]const u8, null), without.command_line);
+    try testing.expectEqualStrings("could not read the command line (access denied, or it has exited)", without.command_note);
     try testing.expectEqualStrings("", without.identity_note);
 
     const none = try withheld(gpa, "0.0.0.0:80", null, "access denied");
@@ -154,8 +166,8 @@ test "a named Occupier can have no Command line, and withheld has none at all" {
 // the wrong order, so a comparator that did nothing would fail this.
 test "a dual-stack pair sorts IPv4 first" {
     var rows = [_]Occupier{
-        .{ .pid = 53, .local_address = "[::]:53", .process_name = "x", .path = null, .command_line = null, .identity_note = "" },
-        .{ .pid = 53, .local_address = "0.0.0.0:53", .process_name = "x", .path = null, .command_line = null, .identity_note = "" },
+        .{ .pid = 53, .local_address = "[::]:53", .process_name = "x", .path = null, .command_line = null, .command_note = "", .identity_note = "" },
+        .{ .pid = 53, .local_address = "0.0.0.0:53", .process_name = "x", .path = null, .command_line = null, .command_note = "", .identity_note = "" },
     };
     std.mem.sort(Occupier, &rows, {}, lessThan);
 

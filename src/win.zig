@@ -184,7 +184,11 @@ fn describe(gpa: Allocator, local_address: []const u8, pid: u32) Allocator.Error
     defer gpa.free(path);
     const command_line = commandLine(gpa, handle);
     defer if (command_line) |line| gpa.free(line);
-    return occ.named(gpa, local_address, pid, path, command_line);
+    const command_note = if (command_line == null)
+        "could not read the command line (access denied, or it has exited)"
+    else
+        "";
+    return occ.named(gpa, local_address, pid, path, command_line, command_note);
 }
 
 /// The command line of the process behind `handle`, or null

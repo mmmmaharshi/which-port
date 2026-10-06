@@ -63,11 +63,12 @@ pub fn main(init: std.process.Init.Minimal) u8 {
     write(io, std.Io.File.stdout(), report.table(arena, occupiers) catch return exit_lookup_failed) catch
         return exit_lookup_failed;
 
-    // One note per Occupier whose identity the OS withheld, so the `-` is
-    // explained rather than left as a mystery. Deduped by pid: an Occupier
-    // holding both address families is one process, not two. See CONTEXT.md,
-    // "Withheld identity" — withholding is never an error.
-    for (report.identityNotes(arena, occupiers) catch return exit_lookup_failed) |n| {
+    // One note per Occupier whose identity or Command line the OS
+    // withheld, so the `-` is explained rather than left as a mystery.
+    // Deduped by pid: an Occupier holding both address families is one
+    // process, not two. See CONTEXT.md, "Withheld identity" —
+    // withholding is never an error.
+    for (report.notes(arena, occupiers) catch return exit_lookup_failed) |n| {
         write(io, std.Io.File.stderr(), n) catch {};
     }
     return exit_occupied;

@@ -161,8 +161,11 @@ fn describe(io: Io, gpa: Allocator, root: *Io.Dir, local_address: []const u8, pi
     // named Occupier into a withheld one. See occupier.named.
     const command_line = try readCommandLine(io, gpa, root, pid);
     defer if (command_line) |c| gpa.free(c);
-
-    return occ.named(gpa, local_address, pid, path, command_line);
+    const command_note = if (command_line == null)
+        "could not read the command line (access denied, or it has exited)"
+    else
+        "";
+    return occ.named(gpa, local_address, pid, path, command_line, command_note);
 }
 
 /// The Occupier's command line, or null when the OS gives none.

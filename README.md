@@ -4,9 +4,9 @@ Reports the process holding a TCP port.
 
 ```
 > which-port 4711
-ADDRESS       PID    PROCESS   PATH
-0.0.0.0:4711  19912  pwsh.exe  C:\Program Files\PowerShell\7\pwsh.exe
-[::]:4711     19912  pwsh.exe  C:\Program Files\PowerShell\7\pwsh.exe
+ADDRESS       PID    PROCESS   PATH                              COMMAND
+0.0.0.0:4711  19912  node.exe  C:\Program Files\nodejs\node.exe  node server.js
+[::]:4711     19912  node.exe  C:\Program Files\nodejs\node.exe  node server.js
 ```
 
 One port in, one table out. The exit code carries the answer, so a script never
@@ -78,9 +78,15 @@ The table goes to standard output and the prose goes to standard error, so
 The address column tells you whether the port is reachable from outside the
 machine.
 
-**A `-`** means your account cannot read that process's name and path. Windows
-withholds both, and Linux withholds them for most processes. The Occupier is still
-reported by PID and socket, and the reason goes to standard error:
+**COMMAND** is the argument vector the Occupier was started with: what tells
+`node server.js` from `node webpack-dev-server.js`, which the Path cannot,
+because both share one image.
+
+**A `-`** means your account cannot read that process's name, path or command
+line. Windows withholds the name and path together, and Linux withholds them for
+most processes; the command line can also be refused on its own, while the name
+and path still print. The Occupier is still reported by PID and socket, and the
+reason goes to standard error:
 
 ```
 1484: identity unavailable, could not open the process (access denied, or it has exited)
