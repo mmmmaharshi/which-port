@@ -92,6 +92,12 @@ jobs:
         run: zig build all-targets
 
   release:
+    # Skipped, not failed, unless this run is actually a release. A push to master
+    # has no tag and no version input, so the Resolve the version step below
+    # rejects it -- and a workflow that goes red on every ordinary push is a
+    # workflow people learn to ignore, which is how the whole Linux suite went
+    # unrun in the first place. A skipped job reads as skipped.
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
     needs: [linux, macos]
     permissions:
       contents: write
