@@ -93,8 +93,6 @@ fn rawSix(hex: []const u8) ParseError![16]u8 {
     return out;
 }
 
-// ---------------------------------------------------------------- fixtures
-
 const testing = std.testing;
 
 /// Captured verbatim from a real Linux kernel, with the listener this test binds

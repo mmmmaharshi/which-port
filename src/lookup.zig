@@ -126,13 +126,8 @@ test "named derives the process name from the path's basename" {
 
 // Row order is a promise the seam makes rather than an accident of whichever
 // adapter produced the rows. A dual-stack pair is one process, so the two rows
-// are separated by address alone and the IPv4 one lands first.
-//
-// Asserts the order the rows end up in rather than the comparator's return
-// value. Asserting lessThan directly would restate its own definition and pass
-// for any comparison that happens to be consistent; the table's row order is the
-// thing a reader sees. The rows start in the wrong order, so a comparator that
-// did nothing would fail this.
+// are separated by address alone and the IPv4 one lands first. The rows start in
+// the wrong order, so a comparator that did nothing would fail this.
 test "a dual-stack pair sorts IPv4 first" {
     var rows = [_]Occupier{
         .{ .pid = 53, .local_address = "[::]:53", .process_name = "x", .path = null, .identity_note = "" },
