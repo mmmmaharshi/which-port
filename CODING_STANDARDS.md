@@ -11,4 +11,5 @@
 - Always make atomic commits with conventional commits style.
 - Pipe a multi-line commit message into git, or write it to a file first: `Get-Content msg.txt | git commit -F -`. A PowerShell here-string handed to `git commit -F -` as an argument arrives as a pathspec, and git reports the message itself as an unknown file.
 - Tautological tests are considered harmful. A test that only restates what the code does (e.g. asserting the implementation against itself, duplicating logic, or only checking happy-path outputs that mirror the production code) provides no value and gives false confidence. Every test must fail for a real, distinct reason if the production code is wrong.
+- Over-asserted tests are considered harmful. A test that asserts more than the acceptance criterion it proves — a full path where the criterion asks for the binary's name — passes on the machine that wrote it and fails wherever the spelling differs. Assert the weakest property that still fails when the production code is wrong.
 - Output raw source code only. Omit all inline explanations, block comments, and conversational text.
