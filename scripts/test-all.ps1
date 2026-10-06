@@ -100,6 +100,13 @@ Invoke-Step 'every shipped target compiles' {
     zig build all-targets
 }
 
+# main.zig's documented contract: four exit codes and the stdout/stderr split.
+# Checked through the binary, because that is the interface a user meets and the
+# one the README documents. Runs everywhere -- no platform calls.
+Invoke-Step 'cli contract' {
+    pwsh -NoProfile -File (Join-Path $PSScriptRoot 'check-cli.ps1')
+}
+
 # --- the vocabulary check, so glossary drift cannot land unnoticed -----------
 Invoke-Step 'glossary vocabulary' {
     pwsh -NoProfile -File (Join-Path $PSScriptRoot 'check-vocabulary.ps1')

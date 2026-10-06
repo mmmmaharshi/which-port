@@ -97,7 +97,16 @@ fn parsePort(argv: []const [:0]const u8) !u16 {
     const raw = argv[1];
     if (raw.len > 0 and raw[0] == '-') return error.UnknownFlag;
     if (raw.len == 0) return error.NotANumber;
-    const port = std.fmt.parseUnsigned(u16, raw, 10) catch return error.NotANumber;
+    // Overflow is not the same fault as a non-digit, and collapsing the two told
+    // a user who typed 70000 that it was "not a number". It is a number, and it is
+    // out of range -- which is the case that error.OutOfRange was written for and
+    // which nothing could previously reach.
+    const port = std.fmt.parseUnsigned(u16, raw, 10) catch |err| return switch (err) {
+        error.Overflow => error.OutOfRange,
+        error.InvalidCharacter => error.NotANumber,
+    };
+    // Zero parses cleanly and is not a port, so this is the other way to be out
+    // of range.
     if (port == 0) return error.OutOfRange;
     return port;
 }
