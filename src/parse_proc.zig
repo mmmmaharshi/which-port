@@ -12,7 +12,7 @@ const std = @import("std");
 pub const ParseError = error{ Unreadable, OutOfMemory };
 
 /// `st` is the hex TCP state. Only `0A` is a Listening socket.
-pub const listen_hex = "0A";
+const listen_hex = "0A";
 
 pub const Socket = struct {
     /// Four bytes as the kernel prints them, for the shared formatter.

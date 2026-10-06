@@ -87,15 +87,18 @@ if ($onMacos) {
 }
 else {
     Invoke-Step 'the binary compiles' {
-        $out = Join-Path $tmp 'which-port-buildcheck.bin'
-        zig build-exe src/main.zig "-femit-bin=$out"
-        Remove-Item $out -ErrorAction SilentlyContinue
+        zig build host
     }
 }
 
 # The release build, built every run. It is slow only in the sense that it
 # compiles four targets, and it is the step that catches a change which compiles
 # on this machine and nowhere else.
+#
+# `zig build host` and `zig build all-targets` are genuinely two builds, verified
+# rather than assumed: all-targets emits only the four release-named artifacts and
+# does not build this machine's binary. So this step stays two commands, and the
+# host build moved above instead of being done twice under two sets of flags.
 Invoke-Step 'every shipped target compiles' {
     zig build all-targets
 }
@@ -120,6 +123,17 @@ Invoke-Step 'glossary vocabulary' {
     pwsh -NoProfile -File (Join-Path $PSScriptRoot 'check-vocabulary.ps1')
 }
 
+# --- the export check, so a `pub` nobody reads cannot accumulate --------------
+#
+# `zig build` reports an unused local constant. It does not report an unused `pub`,
+# because a library cannot know its callers -- and in a single-binary project the
+# callers are all in src/ and readable. An export nobody reads says a module offers
+# something it no longer uses, and the next agent reads the interface instead of
+# the implementation.
+Invoke-Step 'public surface' {
+    pwsh -NoProfile -File (Join-Path $PSScriptRoot 'check-exports.ps1')
+}
+
 # --- the seam and the suites behind it ---------------------------------------
 #
 # These four run on all three platforms, macOS included, and that surprised me
@@ -137,15 +151,14 @@ Invoke-Step 'glossary vocabulary' {
 # macOS job was wrong to name them by hand. An unverified belief about what the
 # compiler does is the same defect as the WSL path bug this file was written to
 # catch: something skipped, quietly, for a reason nobody had tested.
+# The suite list lives in build.zig and nowhere else. It was five hand-typed
+# `zig test` lines here as well, and a suite added to one and not the other was
+# invisible in review: one side would pass, the other would never run it.
+#
+# `zig build test` runs them and names the failing module, which the five separate
+# invocations could not do -- a failure was a bare non-zero exit.
 Invoke-Step 'format + parser tests' {
-    zig test src/addr.zig
-    zig test src/parse_proc.zig
-    zig test src/report.zig
-    # Named rather than reached through lookup.zig, which reports zero tests:
-    # Zig registers a file's tests only when something forces it to be analysed,
-    # and lookup refers to all of occupier from inside function bodies.
-    zig test src/occupier.zig
-    zig test src/lookup.zig
+    zig build test
 }
 
 # The live round-trip from the spec: bind a Listening socket, look it up, assert

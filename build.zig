@@ -64,6 +64,13 @@ pub fn build(b: *std.Build) void {
     run.step.dependOn(b.getInstallStep());
     b.step("run", "Run which-port").dependOn(&run.step);
 
+    // Declares no new work. It exists to name the host binary's build step, so the
+    // suite below can say `zig build test` covers "the binary compiles" too and
+    // drop the separate `zig build-exe src/main.zig` invocation. main.zig is
+    // reached by no test file, so nothing else in this file compiles it.
+    const host = b.step("host", "Build which-port for this machine");
+    host.dependOn(b.getInstallStep());
+
     // One step per shipped target, so `zig build all-targets` is the whole
     // release build and a failure names the target that failed rather than
     // surfacing as one opaque non-zero exit.
