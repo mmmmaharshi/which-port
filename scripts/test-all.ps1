@@ -1,16 +1,20 @@
 #!/usr/bin/env pwsh
-# Runs every test, on every platform this machine can run.
+# Runs every test this machine is able to run, and says plainly which ones it
+# could not run and why.
 #
 #   pwsh scripts/test-all.ps1
 #
-# Exists because the two suites need genuinely different invocations and neither
-# is discoverable from the source: the Windows suite runs directly, while the
-# Linux one must be cross-compiled with --test-no-exec (the Windows host cannot
-# execute a musl ELF) and then run inside WSL. That difference is how a test run
-# gets quietly skipped -- which is how the whole Linux suite went unrun once
-# already. One command, no guessing.
+# Exists because a test suite needs a genuinely different invocation per
+# platform, and none of that difference is discoverable from the source: the
+# Windows suite runs directly and binds through ws2_32, the Linux one binds
+# through libc, and on a Windows host the Linux ELF cannot be executed and has
+# to go through WSL. That difference is how a run gets quietly skipped -- which
+# is how the whole Linux suite went unrun once already. One command, no
+# guessing, and no silent omissions.
 #
-# Ticket #5 replaces this with a build.zig. Until then this is the entry point.
+# A suite that cannot run here is printed as SKIPPED with its reason. A suite
+# that goes missing without a reason is the failure mode this file exists to
+# prevent, so a skip is never silent.
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
@@ -18,6 +22,7 @@ Push-Location $root
 
 $failed = @()
 $ran = @()
+$skipped = @()
 
 function Invoke-Step([string]$name, [scriptblock]$body) {
     Write-Host "`n=== $name ===" -ForegroundColor Cyan
@@ -32,38 +37,90 @@ function Invoke-Step([string]$name, [scriptblock]$body) {
     }
 }
 
-# --- shared: parser tests are OS-free, so run them once per target -----------
+function Skip-Step([string]$name, [string]$why) {
+    Write-Host "`n=== $name ===`nSKIPPED: $why" -ForegroundColor Yellow
+    $script:skipped += "$name -- $why"
+}
+
+# Which OS is this? $IsWindows and friends are read-only in pwsh 7 but absent in
+# Windows PowerShell 5.1, so the fallback reads the platform directly rather
+# than trusting a variable that might not exist.
+function Test-Os([string]$name) {
+    $flag = "\$Is$name"
+    if (Get-Variable -Name $flag -ErrorAction SilentlyContinue) { return [bool](Get-Variable -Name $flag).Value }
+    $platform = switch ($name) {
+        'Windows' { [System.Runtime.InteropServices.OSPlatform]::Windows }
+        'Macos' { [System.Runtime.InteropServices.OSPlatform]::OSX }
+        default { [System.Runtime.InteropServices.OSPlatform]::Linux }
+    }
+    return [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($platform)
+}
+
+$onWindows = Test-Os 'Windows'
+$onMacos = Test-Os 'Macos'
+
+# Neither $env:TEMP nor a backslash survives the trip to Linux. $env:TEMP is unset
+# under pwsh on Unix, so "$env:TEMP\x" collapses to "\x" -- a write to the root of
+# the filesystem, which fails as permission denied and reads like a broken build.
+# Both helpers below are the portable spelling.
+$tmp = [System.IO.Path]::GetTempPath()
+$src = Join-Path $root 'src'
+
+# --- OS-free: nothing here reaches the platform seam -------------------------
 Invoke-Step 'formatting' {
-    $bad = Get-ChildItem $root\src, $root -Filter *.zig -File |
+    $bad = Get-ChildItem $src, $root -Filter *.zig -File |
         Where-Object { $_.Name -ne 'build.zig' -or $_.DirectoryName -eq $root } |
         Where-Object { zig fmt --check $_.FullName 2>&1 }
     if ($bad) { throw "not zig-fmt clean: $($bad.Name -join ', ')" }
 }
 
-Invoke-Step 'format + parser tests (windows)' {
-    zig test src/addr.zig
-    zig test src/parse_proc.zig
-    zig test src/report.zig
-    zig test src/lookup.zig
-}
-
-# main.zig is reached by no test file, so nothing above compiles it. Without
+# main.zig is reached by no test file, so nothing below compiles it. Without
 # this a change that broke argument parsing, the table layout or an exit code
 # would leave every suite green.
 Invoke-Step 'the binary compiles' {
-    zig build-exe src/main.zig -femit-bin="$env:TEMP\which-port-buildcheck.exe"
-    Remove-Item "$env:TEMP\which-port-buildcheck.exe" -ErrorAction SilentlyContinue
+    $out = Join-Path $tmp 'which-port-buildcheck.bin'
+    zig build-exe src/main.zig "-femit-bin=$out"
+    Remove-Item $out -ErrorAction SilentlyContinue
 }
 
 # The release build, built every run. It is slow only in the sense that it
-# compiles six targets, and it is the step that catches a change which compiles
+# compiles four targets, and it is the step that catches a change which compiles
 # on this machine and nowhere else.
 Invoke-Step 'every shipped target compiles' {
     zig build all-targets
 }
 
-Invoke-Step 'windows live round-trip' {
-    zig test src/win_test.zig
+# --- the vocabulary check, so glossary drift cannot land unnoticed -----------
+Invoke-Step 'glossary vocabulary' {
+    pwsh -NoProfile -File (Join-Path $PSScriptRoot 'check-vocabulary.ps1')
+}
+
+# --- the seam and the suites behind it ---------------------------------------
+#
+# report.zig imports lookup.zig for Occupier and unresolved, and lookup.zig
+# picks its platform implementation at module scope. So on macOS the whole
+# presentation layer is unreachable until the lsof lookup lands -- not just the
+# macOS-specific part of it. Stated here rather than left as a red build on
+# someone else's machine.
+if ($onMacos) {
+    Skip-Step 'format + parser tests' 'lookup.zig selects its platform at module scope and macOS is @compileError until the lsof ticket lands'
+    Skip-Step 'windows live round-trip' 'ws2_32 links only on Windows'
+}
+else {
+    Invoke-Step 'format + parser tests' {
+        zig test src/addr.zig
+        zig test src/parse_proc.zig
+        zig test src/report.zig
+        zig test src/lookup.zig
+    }
+}
+
+# The live round-trip from the spec: bind a Listening socket, look it up, assert
+# the Occupier is this very process.
+if ($onWindows) {
+    Invoke-Step 'windows live round-trip' {
+        zig test src/win_test.zig
+    }
 }
 
 # --- linux: run natively where Linux, cross-compile into WSL where Windows ----
@@ -74,13 +131,14 @@ Invoke-Step 'windows live round-trip' {
 #
 # The earlier version keyed this on WSL alone, so a Linux runner -- where WSL
 # never exists -- reported the suite SKIPPED and the run green. That is the same
-# quiet skip this file exists to prevent, and the CI macOS job had to name the
-# suites it wanted by hand to get around it.
-$onWindows = $IsWindows
-if (-not $IsWindows) { $onWindows = [System.Environment]::OSVersion.Platform -eq 'Win32NT' }
-
-if (-not $onWindows) {
+# quiet skip this file exists to prevent.
+if (-not $onWindows -and $onMacos) {
+    Skip-Step 'linux suite' 'nothing on this machine can execute the ELF'
+}
+elseif (-not $onWindows) {
     Invoke-Step 'linux suite (native)' {
+        # -lc because the suite binds its listener through extern "c": Zig 0.17
+        # removed std.posix.socket.
         zig test src/lin_test.zig -target x86_64-linux-musl -lc
     }
 }
@@ -89,35 +147,58 @@ else {
     try { $null = wsl -l -v 2>$null; $haveWsl = $true } catch { $haveWsl = $false }
 
     if (-not $haveWsl) {
-        Write-Host "`n=== linux tests ===`nSKIPPED: no WSL on this machine." -ForegroundColor Yellow
+        Skip-Step 'linux suite' 'a Windows host cannot execute a musl ELF and this machine has no WSL'
     }
     else {
-        $bin = Join-Path $env:TEMP 'which-port-linux-test'
-        # Separators must become / before wsl sees the path. It strips backslashes
-        # out of the argument, which collapses the path into one unopenable name and
-        # fails the step with 127 -- looking like a missing binary, not a bad path.
-        $wslBin = "/mnt/$($bin.Substring(0,1).ToLower())/$($bin.Substring(3).Replace('\','/'))"
-        Invoke-Step 'linux suite (cross-compiled, run in WSL)' {
-            # -lc because the suite binds its listener through extern "c": Zig 0.17
-            # removed std.posix.socket. --test-no-exec because a musl ELF will not
-            # run on a Windows host.
-            zig test src/lin_test.zig -target x86_64-linux-musl -lc --test-no-exec "-femit-bin=$bin"
-            if ($LASTEXITCODE -ne 0) { throw 'cross-compile failed' }
-            wsl -d Ubuntu-24.04 -- chmod +x $wslBin
-            wsl -d Ubuntu-24.04 -- $wslBin
+        $bin = Join-Path $tmp 'which-port-linux-test'
+
+        # Hand the path over in an environment variable, not as an argument.
+        # wsl.exe strips backslashes out of its arguments, so a Windows path
+        # arrives inside WSL as one unopenable name and the step dies with 127 --
+        # which reads like a missing binary rather than a mangled path. stdin is
+        # not forwarded either. WSLENV with the /p flag is the mechanism built
+        # for exactly this: wslpath does the conversion at the boundary, so the
+        # path is right for any drive letter instead of any one guessed layout.
+        #
+        # Saved and restored, because WSLENV may already carry a caller's own
+        # path-translated variables and clobbering it would break those too.
+        #
+        # Built with -f, not "$saved:WP_TEST_BIN/p". PowerShell reads a colon in a
+        # double-quoted string as a scope operator, so $saved:WP_TEST_BIN is the
+        # variable WP_TEST_BIN in scope `saved` -- empty, silently, leaving WSLENV
+        # set to "/p" and the path never handed over at all.
+        #
+        # Trailing colons are trimmed first. Windows Terminal leaves WSLENV as
+        # "WT_SESSION:WT_PROFILE_ID:", and appending produces a "::" separator that
+        # names an empty variable.
+        $savedWslenv = $env:WSLENV
+        $env:WP_TEST_BIN = $bin
+        $base = ($savedWslenv -replace ':+$', '')
+        $env:WSLENV = if ($base) { '{0}:WP_TEST_BIN/p' -f $base } else { 'WP_TEST_BIN/p' }
+
+        try {
+            Invoke-Step 'linux suite (cross-compiled, run in WSL)' {
+                # --test-no-exec because a musl ELF will not run on a Windows host.
+                zig test src/lin_test.zig -target x86_64-linux-musl -lc --test-no-exec "-femit-bin=$bin"
+                if ($LASTEXITCODE -ne 0) { throw 'cross-compile failed' }
+                wsl -d Ubuntu-24.04 -- bash -lc 'chmod +x "$WP_TEST_BIN" && "$WP_TEST_BIN"'
+            }
+        }
+        finally {
+            $env:WSLENV = $savedWslenv
+            Remove-Item Env:\WP_TEST_BIN -ErrorAction SilentlyContinue
         }
     }
-}
-
-# --- the vocabulary check, so glossary drift cannot land unnoticed -----------
-Invoke-Step 'glossary vocabulary' {
-    pwsh -NoProfile -File (Join-Path $PSScriptRoot 'check-vocabulary.ps1')
 }
 
 Pop-Location
 
 Write-Host "`n--- summary ---"
 Write-Host ("passed: {0}" -f ($ran -join ', '))
+if ($skipped.Count -gt 0) {
+    Write-Host "skipped:" -ForegroundColor Yellow
+    $skipped | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+}
 if ($failed.Count -gt 0) {
     Write-Host ("FAILED: {0}" -f ($failed -join ', ')) -ForegroundColor Red
     exit 1

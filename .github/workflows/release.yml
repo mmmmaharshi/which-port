@@ -6,10 +6,17 @@
 #
 # A tag whose name ends in -rc or -beta is a prerelease, so the "latest" release
 # on the repo page never points at a candidate.
+#
+# The name is release and the file is release.yml, but it now also runs on every
+# push to master. That is deliberate: the checks belong to a commit, not to a
+# tag, and running them only at tag time left the native-Linux branch of
+# scripts/test-all.ps1 unexercised for weeks at a time. Only the last job
+# publishes anything, and it waits for the other two.
 name: release
 
 on:
   push:
+    branches: [master]
     tags: ["v*"]
   # Manual, for cutting a release without a tag first. The version is required,
   # so the tag cannot be forgotten: a release with no tag is unreachable from
@@ -22,9 +29,30 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  # The Linux half of the test suite, on a real Linux runner, on every push.
+  #
+  # This job exists because the checks used to run only inside the release job, so
+  # the native-Linux branch of scripts/test-all.ps1 went unexercised between
+  # releases -- and a branch nobody runs is a branch that rots. It runs there too
+  # now, which is the only place that can.
+  #
+  # The runner image is pinned, as in the release job. ubuntu-latest migrates to
+  # Ubuntu 26 on 19 October 2026 and this workflow should not change shape because
+  # someone else's image did.
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/install-zig
+      # The suite is PowerShell because the Windows and Linux invocations
+      # genuinely differ, and a step that cannot run is a step nobody trusts.
+      - name: Checks
+        shell: pwsh
+        run: ./scripts/test-all.ps1
+
   # Proves the parts that do not depend on a platform compile and pass on a real
   # macOS runner, and that the release targets still cross-compile from a macOS
   # host. ADR 0001 claims the toolchain targets every platform from one host, and
@@ -49,6 +77,11 @@ jobs:
           tar -xJf zig.tar.xz
           echo "$PWD/zig-aarch64-macos-0.17.0" >> "$GITHUB_PATH"
 
+      # Named by hand rather than through scripts/test-all.ps1, because that
+      # script skips the whole presentation layer on macOS: report.zig imports
+      # lookup.zig for Occupier and unresolved, and lookup.zig picks its platform
+      # at module scope. When the lsof lookup lands, that coupling goes with it
+      # and this job can call the script like the others.
       - name: Unit suites that take no platform
         run: |
           zig test src/addr.zig
@@ -59,49 +92,22 @@ jobs:
         run: zig build all-targets
 
   release:
-    needs: macos
-    # Pinned rather than ubuntu-latest, which migrates to Ubuntu 26 on 19 October
-    # 2026. Pinning means an OS change cannot land in the middle of a release,
-    # and this runner image is the one every published release was built on.
+    needs: [linux, macos]
+    permissions:
+      contents: write
     runs-on: ubuntu-24.04
     steps:
       # v7 runs on Node 24. v4 targeted Node 20, which GitHub deprecated, so
       # every run carried a warning about an action the workflow cannot change.
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/install-zig
 
-      # Installed from ziglang.org rather than through a setup action. The
-      # latest setup-zig still declares node20 and has published no node24
-      # release, so the warning would follow us until its author ships one.
-      #
-      # The version and its shasum are written out rather than read from
-      # ziglang.org's index.json at run time. Both come from that index, so they
-      # are the same values a lookup would return, and pinning them means a
-      # version bump is a reviewable two-line change instead of whatever upstream
-      # publishes under the same name tomorrow.
-      - name: Install Zig
-        run: |
-          # 0.17.0, the version ADR 0001 chose.
-          url=https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz
-          sha=1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
-          curl -sSfL "$url" -o zig.tar.xz
-          echo "$sha  zig.tar.xz" | sha256sum -c -
-          # The tarball's top directory carries the target triple, so it is
-          # zig-x86_64-linux-0.17.0 and not zig-0.17.0. Symlinking to the shorter
-          # name leaves a dangling link and `zig version` exits 127.
-          sudo tar -xJf zig.tar.xz -C /usr/local
-          sudo ln -sf /usr/local/zig-x86_64-linux-0.17.0/zig /usr/local/bin/zig
-          zig version
-
+      # No check step. The linux job above runs ./scripts/test-all.ps1 against
+      # this same commit, and this job waits for it, so repeating the run here
+      # would spend a runner proving a thing already proven. What stays is the
+      # build, because the binaries are published from this runner's output.
       - name: Build every shipped target
         run: zig build all-targets
-
-      # The test suite is PowerShell because the Windows and Linux invocations
-      # genuinely differ, and a step that cannot run is a step nobody trusts. On
-      # a Linux runner the parser and report suites run natively, which is the
-      # thing a Windows-only runner cannot do.
-      - name: Checks
-        shell: pwsh
-        run: ./scripts/test-all.ps1
 
       # Raw, for every target.
       #

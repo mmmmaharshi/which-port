@@ -1,0 +1,39 @@
+# Installs the Zig toolchain ADR 0001 chose, on a Linux runner.
+#
+# A composite action rather than the block repeated in each job, because a version
+# bump should be one reviewable edit. Two copies is already the point at which the
+# second one gets bumped and the first does not.
+#
+# Installed from ziglang.org rather than through a setup action. The latest
+# setup-zig still declares node20 and has published no node24 release, so the
+# warning would follow us until its author ships one.
+#
+# The version and its shasum are written out rather than read from
+# ziglang.org's index.json at run time. Both come from that index, so they are
+# the same values a lookup would return, and pinning them means a version bump is
+# a reviewable two-line change instead of whatever upstream publishes under the
+# same name tomorrow.
+name: Install Zig
+description: Install the pinned Zig toolchain on a Linux runner
+
+runs:
+  using: composite
+  steps:
+    - name: Download and verify
+      shell: bash
+      run: |
+        # 0.17.0, the version ADR 0001 chose.
+        url=https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz
+        sha=1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
+        curl -sSfL "$url" -o zig.tar.xz
+        echo "$sha  zig.tar.xz" | sha256sum -c -
+
+    - name: Unpack onto PATH
+      shell: bash
+      run: |
+        # The tarball's top directory carries the target triple, so it is
+        # zig-x86_64-linux-0.17.0 and not zig-0.17.0. Symlinking to the shorter
+        # name leaves a dangling link and `zig version` exits 127.
+        sudo tar -xJf zig.tar.xz -C /usr/local
+        sudo ln -sf /usr/local/zig-x86_64-linux-0.17.0/zig /usr/local/bin/zig
+        zig version
