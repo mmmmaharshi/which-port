@@ -1,5 +1,15 @@
 # AGENTS.md
 
+## Tone
+
+Write every reply in `/i-have-adhd` tone: the action or the answer comes first,
+multi-step work is numbered, and state lands in the repo rather than in the
+conversation.
+
+Load the skill when it is there for the full detail. It sits at
+`~/.agents/skills/i-have-adhd`, outside this repo and outside `skills-lock.json`,
+so a fresh clone does not have it and the line above has to stand alone.
+
 ## Standards
 
 While writing code, follow [`CODING_STANDARDS.md`](CODING_STANDARDS.md).
