@@ -106,6 +106,7 @@ test "one Occupier renders the header and one aligned row" {
         .local_address = "0.0.0.0:8080",
         .process_name = "node.exe",
         .path = "C:\\node.exe",
+        .command_line = "node server.js",
         .identity_note = "",
     }};
 
@@ -129,6 +130,7 @@ test "a withheld pid and path both render as the placeholder" {
         .local_address = "0.0.0.0:8080",
         .process_name = occ.unresolved,
         .path = null,
+        .command_line = null,
         .identity_note = "the holding process could not be identified",
     }};
 
@@ -154,6 +156,7 @@ test "a dual-stack pair with one withheld identity yields one note" {
             .local_address = "0.0.0.0:53",
             .process_name = "systemd",
             .path = null,
+            .command_line = null,
             .identity_note = note,
         },
         .{
@@ -161,6 +164,7 @@ test "a dual-stack pair with one withheld identity yields one note" {
             .local_address = "[::]:53",
             .process_name = "systemd",
             .path = null,
+            .command_line = null,
             .identity_note = note,
         },
     };

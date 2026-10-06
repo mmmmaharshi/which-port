@@ -44,6 +44,17 @@ considers privileged, and `which-port` still reports the occupier without it.
 A blank path is never an error.
 _Avoid_: location, executable (the name is not the path)
 
+**Command line**:
+The argument vector an Occupier was started with, rendered as one line with the
+arguments separated by spaces. This is what tells `node server.js` from
+`node webpack-dev-server.js`. The Path does not, because both share one image.
+No tool in this category reports it — see `docs/research/next-feature.md`.
+_Avoid_: cmd, cmdline
+_Not on the list_: `argv` and `arguments` are legitimate words elsewhere.
+`main.zig` uses `argv` for which-port's own arguments, which is a different
+subject, and the glossary check works per file and cannot tell two subjects
+apart. Banning the word would make the check wrong rather than strict.
+
 **Withheld identity**:
 The state of an occupier whose metadata the OS refused to an unprivileged
 caller. On Windows that costs the Path *and* the process name, because a process
