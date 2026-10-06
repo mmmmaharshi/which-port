@@ -58,11 +58,16 @@ test "a bound Listening socket is Occupied by this process" {
     const port_suffix = try std.fmt.allocPrint(gpa, ":{d}", .{listener.port});
     defer gpa.free(port_suffix);
 
-    // Read the test binary's own path the same way the adapter reads
-    // an Occupier's image: a readlink of /proc/self/exe.
+    // The test binary's own name. A readlink of /proc/self/exe, the
+    // same way the adapter reads an Occupier's image -- but compared
+    // by name only, because the kernel reports argv as the caller
+    // spelled it: `zig test` launches this binary by a relative path
+    // while the readlink is absolute, and the name is the only part
+    // spelled the same either way.
     var exe_buf: [4096]u8 = undefined;
     const exe_len = try std.Io.Dir.readLinkAbsolute(io, "/proc/self/exe", &exe_buf);
     const exe = exe_buf[0..exe_len];
+    const exe_name = std.fs.path.basename(exe);
 
     var found = false;
     for (rows) |row| {
@@ -76,7 +81,7 @@ test "a bound Listening socket is Occupied by this process" {
         // argument, or a null where the kernel gave a command line
         // fails here against a real kernel.
         const command_line = row.command_line orelse return error.CommandLineWithheld;
-        try std.testing.expect(std.mem.indexOf(u8, command_line, exe) != null);
+        try std.testing.expect(std.mem.indexOf(u8, command_line, exe_name) != null);
         // The NUL separators are gone: what the kernel delimited
         // with NULs is reported as one space-separated line.
         try std.testing.expect(std.mem.indexOfScalar(u8, command_line, 0) == null);
