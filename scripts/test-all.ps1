@@ -231,6 +231,13 @@ else {
                 zig test src/lin_test.zig -target x86_64-linux-musl -lc --test-no-exec "-femit-bin=$bin"
                 if ($LASTEXITCODE -ne 0) { throw 'cross-compile failed' }
                 wsl -d Ubuntu-24.04 -- bash -lc 'chmod +x "$WP_TEST_BIN" && "$WP_TEST_BIN"'
+                # The run above passes an absolute path, so argv[0] in
+                # the command line is absolute; CI's native `zig test`
+                # launches the cached binary by a relative one. A live
+                # assertion that holds for only one spelling passes
+                # here and fails on the runner, so the suite runs both
+                # ways: same binary, launched relative.
+                wsl -d Ubuntu-24.04 -- bash -lc 'cd "${WP_TEST_BIN%/*}" && "./${WP_TEST_BIN##*/}"'
             }
         }
         finally {
