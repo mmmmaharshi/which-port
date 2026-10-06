@@ -3,6 +3,10 @@
 zig-out/
 *.exe
 
+# A release asset, if one lands here while testing an install command
+SHA256SUMS
+which-port-*
+
 # Agent-local state (reinstallable; skills are pinned by skills-lock.json)
 .opencode/
 .agents/

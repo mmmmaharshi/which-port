@@ -6,10 +6,13 @@
 #   pwsh scripts/install.ps1 -Version v0.1.1
 #   pwsh scripts/install.ps1 -Dir C:\tools        # skip the PATH change
 #
-# Four steps, each printed before it happens. A script run from the internet that
-# prints nothing until it finishes is indistinguishable from one that has hung.
-# The count is in the header so a pasted log can be read against this list, and a
-# failure names the step so a broken log still says where it stopped.
+# Four steps, each announced before it happens, so a run that hangs tells you
+# where. A script run from the internet that prints nothing until it finishes is
+# indistinguishable from one that is stuck, and a list of all four steps up front
+# is a list of all four steps up front.
+#
+# The count is in the header so a pasted log reads against this list, and a
+# failure names the step it died on.
 #
 # Everything here exists because of something Windows does that surprises people:
 #
