@@ -183,12 +183,7 @@ fn describe(io: Io, gpa: Allocator, root: *Io.Dir, local_address: []const u8, pi
 /// "Command line".
 fn readCommandLine(io: Io, gpa: Allocator, root: *Io.Dir, pid: u32) LookupError!?[]u8 {
     var path_buf: [64]u8 = undefined;
-    // The kernel's file name for this is a word the glossary
-    // bans (see CONTEXT.md, "Command line"), and the
-    // vocabulary check matches whole words only, so the
-    // path's last component is joined at comptime rather
-    // than written whole.
-    const sub_path = std.fmt.bufPrint(&path_buf, "{d}/cmd" ++ "line", .{pid}) catch return null;
+    const sub_path = std.fmt.bufPrint(&path_buf, "{d}/cmdline", .{pid}) catch return null;
 
     // readProcFile rather than a size-based reader: procfs reports
     // a size of zero, which would read as an empty command line.

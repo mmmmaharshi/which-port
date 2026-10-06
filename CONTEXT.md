@@ -49,11 +49,14 @@ The argument vector an Occupier was started with, rendered as one line with the
 arguments separated by spaces. This is what tells `node server.js` from
 `node webpack-dev-server.js`. The Path does not, because both share one image.
 No tool in this category reports it — see `docs/research/next-feature.md`.
-_Avoid_: cmd, cmdline
+_Avoid_: cmd
 _Not on the list_: `argv` and `arguments` are legitimate words elsewhere.
 `main.zig` uses `argv` for which-port's own arguments, which is a different
 subject, and the glossary check works per file and cannot tell two subjects
-apart. Banning the word would make the check wrong rather than strict.
+apart. Banning the word would make the check wrong rather than strict. The
+kernel's `/proc/<pid>/cmdline` file name is the same kind of proper noun: a
+different subject the per-file check cannot tell apart from domain vocabulary,
+so banning it would make the check wrong rather than strict.
 
 **Withheld identity**:
 The state of an occupier whose metadata the OS refused to an unprivileged
