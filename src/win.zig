@@ -182,7 +182,6 @@ fn describe(gpa: Allocator, local_address: []const u8, pid: u32) Allocator.Error
     const path = std.unicode.utf16LeToUtf8Alloc(gpa, wide[0..len]) catch
         return occ.withheld(gpa, local_address, pid, "the image path is not valid text");
     defer gpa.free(path);
-
     const command_line = commandLine(gpa, handle);
     defer if (command_line) |line| gpa.free(line);
     return occ.named(gpa, local_address, pid, path, command_line);

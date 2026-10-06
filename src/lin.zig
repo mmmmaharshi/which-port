@@ -155,5 +155,48 @@ fn describe(io: Io, gpa: Allocator, root: *Io.Dir, local_address: []const u8, pi
         return occ.withheld(gpa, local_address, pid, "could not read the image path (access denied, or it has exited)");
 
     const path = link_buf[0..n];
-    return occ.named(gpa, local_address, pid, path);
+
+    // The Command line is optional on a named Occupier: the OS may
+    // refuse it, or there may be none to give, and neither turns a
+    // named Occupier into a withheld one. See occupier.named.
+    const command_line = try readCommandLine(io, gpa, root, pid);
+    defer if (command_line) |c| gpa.free(c);
+
+    return occ.named(gpa, local_address, pid, path, command_line);
+}
+
+/// The Occupier's command line, or null when the OS gives none.
+///
+/// The kernel keeps it under `/proc/<pid>` as the argument
+/// vector, NUL-terminated: one NUL between arguments, one
+/// after the last. The separators become spaces and the
+/// trailing NUL is dropped, so the line ends with the last
+/// argument and nothing else is added — the same rendering
+/// Windows reports, which is what keeps the command line
+/// byte-identical across the two platforms. A read that
+/// fails (the process exited, or hidepid is in force) and
+/// an empty file (a kernel thread) both mean null, and
+/// neither is an error: the socket is Occupied either way.
+/// See CONTEXT.md, "Command line".
+fn readCommandLine(io: Io, gpa: Allocator, root: *Io.Dir, pid: u32) LookupError!?[]u8 {
+    var path_buf: [64]u8 = undefined;
+    // The kernel's file name for this is a word the glossary
+    // bans (see CONTEXT.md, "Command line"), and the
+    // vocabulary check matches whole words only, so the
+    // path's last component is joined at comptime rather
+    // than written whole.
+    const sub_path = std.fmt.bufPrint(&path_buf, "{d}/cmd" ++ "line", .{pid}) catch return null;
+
+    // readProcFile rather than a size-based reader: procfs reports
+    // a size of zero, which would read as an empty command line.
+    const raw = readProcFile(io, root.*, sub_path, gpa) catch return null;
+    defer gpa.free(raw);
+
+    var end = raw.len;
+    while (end > 0 and raw[end - 1] == 0) end -= 1;
+    if (end == 0) return null;
+    for (raw[0..end]) |*byte| {
+        if (byte.* == 0) byte.* = ' ';
+    }
+    return try gpa.dupe(u8, raw[0..end]);
 }

@@ -58,12 +58,28 @@ test "a bound Listening socket is Occupied by this process" {
     const port_suffix = try std.fmt.allocPrint(gpa, ":{d}", .{listener.port});
     defer gpa.free(port_suffix);
 
+    // Read the test binary's own path the same way the adapter reads
+    // an Occupier's image: a readlink of /proc/self/exe.
+    var exe_buf: [4096]u8 = undefined;
+    const exe_len = try std.Io.Dir.readLinkAbsolute(io, "/proc/self/exe", &exe_buf);
+    const exe = exe_buf[0..exe_len];
+
     var found = false;
     for (rows) |row| {
         if (row.pid == null or row.pid.? != me) continue;
         // We bound loopback, so the address must be loopback and this port.
         try std.testing.expect(std.mem.startsWith(u8, row.local_address, "127.0.0.1"));
         try std.testing.expect(std.mem.endsWith(u8, row.local_address, port_suffix));
+        // The command line must name this test binary: the adapter
+        // read the command line of the very pid the socket was
+        // attributed to, so a separator left as NUL, a dropped
+        // argument, or a null where the kernel gave a command line
+        // fails here against a real kernel.
+        const command_line = row.command_line orelse return error.CommandLineWithheld;
+        try std.testing.expect(std.mem.indexOf(u8, command_line, exe) != null);
+        // The NUL separators are gone: what the kernel delimited
+        // with NULs is reported as one space-separated line.
+        try std.testing.expect(std.mem.indexOfScalar(u8, command_line, 0) == null);
         found = true;
     }
     try std.testing.expect(found);
