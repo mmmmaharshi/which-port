@@ -102,9 +102,17 @@ Invoke-Step 'every shipped target compiles' {
 
 # main.zig's documented contract: four exit codes and the stdout/stderr split.
 # Checked through the binary, because that is the interface a user meets and the
-# one the README documents. Runs everywhere -- no platform calls.
-Invoke-Step 'cli contract' {
-    pwsh -NoProfile -File (Join-Path $PSScriptRoot 'check-cli.ps1')
+# one the README documents.
+#
+# Skipped on macOS for the same reason "the binary compiles" is: there is no
+# binary to run. Both skips disappear together, when the lsof lookup lands.
+if ($onMacos) {
+    Skip-Step 'cli contract' 'needs a binary, and main.zig will not compile on macOS until the lsof lookup lands'
+}
+else {
+    Invoke-Step 'cli contract' {
+        pwsh -NoProfile -File (Join-Path $PSScriptRoot 'check-cli.ps1')
+    }
 }
 
 # --- the vocabulary check, so glossary drift cannot land unnoticed -----------
